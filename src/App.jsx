@@ -146,23 +146,84 @@ export default function App() {
     const email = (u?.['Email Id'] || u?.['Email'] || '').trim().toLowerCase()
     if (!email) return
 
-    if (!approvals[email]) {
-      const updated = {
-        ...approvals,
-        [email]: {
-          email,
-          name: u['Name'] || u['Full Name'] || 'Participant',
-          org: u['Name of the Organization'] || u['Organization'] || '',
-          phone: u['Phone Number'] || '',
-          status: 'pending',
-          requestedAt: new Date().toISOString(),
-          approvedAt: null,
-        }
+    const name = u['Name'] || u['Full Name'] || 'Participant'
+    const org = u['Name of the Organization'] || u['Organization'] || ''
+    const phone = u['Phone Number'] || ''
+    const current = approvals[email]
+
+    const updatedRecord = {
+      email,
+      name,
+      org,
+      phone,
+      status: current?.status || 'pending',
+      requestedAt: current?.requestedAt || new Date().toISOString(),
+      approvedAt: current?.approvedAt || null,
+    }
+
+    const updated = {
+      ...approvals,
+      [email]: updatedRecord,
+    }
+    setApprovals(updated)
+    window.dispatchEvent(new Event('safe_approval_change'))
+
+    // ── Dispatch request to Google Sheets for cross-device Admin sync ──
+    if (GOOGLE_SHEET_URL) {
+      try {
+        const params = new URLSearchParams({
+          Action: 'REQUEST_ACCESS',
+          SecretToken: SECRET_TOKEN,
+          Email: email,
+          Name: name,
+          Organization: org,
+          Phone: phone,
+        })
+        fetch(`${GOOGLE_SHEET_URL}?${params.toString()}`, { mode: 'cors' }).catch(() => {})
+      } catch (err) {
+        console.error('Failed to dispatch cloud access request', err)
       }
-      setApprovals(updated)
-      window.dispatchEvent(new Event('safe_approval_change'))
     }
   }
+
+  /* ── Real-time Cross-Device Cloud Sync for Approvals ── */
+  useEffect(() => {
+    if (!GOOGLE_SHEET_URL) return
+
+    let isMounted = true
+    const syncApprovalsFromCloud = async () => {
+      try {
+        const res = await fetch(`${GOOGLE_SHEET_URL}?Action=GET_APPROVALS&_t=${Date.now()}`, { mode: 'cors' })
+        const json = await res.json()
+        if (isMounted && json && json.data && typeof json.data === 'object') {
+          setApprovals(prev => {
+            const merged = { ...prev }
+            let hasChanges = false
+            for (const [k, v] of Object.entries(json.data)) {
+              if (JSON.stringify(merged[k]) !== JSON.stringify(v)) {
+                merged[k] = { ...merged[k], ...v }
+                hasChanges = true
+              }
+            }
+            if (hasChanges) {
+              window.dispatchEvent(new Event('safe_approval_change'))
+              return merged
+            }
+            return prev
+          })
+        }
+      } catch (err) {
+        // Silently handle temporary offline states
+      }
+    }
+
+    syncApprovalsFromCloud()
+    const pollInterval = setInterval(syncApprovalsFromCloud, 2500)
+    return () => {
+      isMounted = false
+      clearInterval(pollInterval)
+    }
+  }, [GOOGLE_SHEET_URL])
 
   /* ── Start Assessment ── */
   const handleStart = () => {
@@ -381,6 +442,7 @@ export default function App() {
           }
         }}
         onLogout={handleLogout}
+        googleSheetUrl={GOOGLE_SHEET_URL}
       />
     )
   }
@@ -420,6 +482,7 @@ export default function App() {
         sections={sections} setSections={setSections}
         settings={settings} setSettings={setSettings}
         approvals={approvals} setApprovals={setApprovals}
+        googleSheetUrl={GOOGLE_SHEET_URL}
       />
     )
   }

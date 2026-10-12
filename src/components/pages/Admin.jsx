@@ -22,6 +22,7 @@ export default function Admin({
   sections,    setSections,
   settings,    setSettings,
   approvals,   setApprovals,
+  googleSheetUrl,
 }) {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -172,7 +173,11 @@ export default function Admin({
             />
           )}
           {activeTab === 'access' && (
-            <AccessTab approvals={approvals} setApprovals={setApprovals} />
+            <AccessTab
+              approvals={approvals}
+              setApprovals={setApprovals}
+              googleSheetUrl={googleSheetUrl}
+            />
           )}
           {activeTab === 'questions' && (
             <QuestionsTab questions={questions} setQuestions={setQuestions} />

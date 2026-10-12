@@ -9,7 +9,7 @@ import { load } from '../../hooks/useStore'
  * Shown after participant registers and verifies OTP, but before admin grants access.
  * The test and its 30-minute timer CANNOT start until approval is granted.
  */
-export default function WaitingApproval({ user, onHome, onStartTest, onLogout }) {
+export default function WaitingApproval({ user, onHome, onStartTest, onLogout, googleSheetUrl }) {
   const emailKey = (user?.['Email Id'] || user?.['Email'] || '').trim().toLowerCase()
   
   const checkCurrentApproval = () => {
@@ -22,16 +22,45 @@ export default function WaitingApproval({ user, onHome, onStartTest, onLogout })
   const [checking, setChecking] = useState(false)
   const [lastChecked, setLastChecked] = useState(new Date())
 
-  // Check approval status in real-time (cross-tab storage event + interval polling)
+  // Check approval status in real-time (cross-tab storage event + interval polling + cloud sync)
   useEffect(() => {
-    const updateStatus = () => {
-      const approved = checkCurrentApproval()
-      setIsApproved(approved)
-      setLastChecked(new Date())
+    let isMounted = true
+
+    const updateStatus = async () => {
+      // 1. Check local storage
+      const localApproved = checkCurrentApproval()
+      if (localApproved) {
+        if (isMounted) setIsApproved(true)
+        return
+      }
+
+      // 2. Cross-device cloud poll from Google Sheets
+      if (googleSheetUrl && emailKey) {
+        try {
+          const res = await fetch(`${googleSheetUrl}?Action=GET_APPROVALS&_t=${Date.now()}`, { mode: 'cors' })
+          const json = await res.json()
+          if (isMounted && json && json.data && json.data[emailKey]) {
+            const cloudRecord = json.data[emailKey]
+            if (cloudRecord.status === 'approved') {
+              setIsApproved(true)
+              // Sync back to local storage
+              const cur = load('safe_access_approvals', {})
+              cur[emailKey] = { ...cur[emailKey], ...cloudRecord, status: 'approved' }
+              localStorage.setItem('safe_access_approvals', JSON.stringify(cur))
+            }
+          }
+        } catch (e) {
+          // Silent fallback on network drop
+        }
+      }
+
+      if (isMounted) setLastChecked(new Date())
     }
 
-    // Interval poll every 1.5 seconds
-    const interval = setInterval(updateStatus, 1500)
+    updateStatus()
+
+    // Interval poll every 2.5 seconds
+    const interval = setInterval(updateStatus, 2500)
 
     // Cross-tab storage event listener
     const handleStorage = (e) => {
@@ -43,20 +72,31 @@ export default function WaitingApproval({ user, onHome, onStartTest, onLogout })
     window.addEventListener('safe_approval_change', updateStatus)
 
     return () => {
+      isMounted = false
       clearInterval(interval)
       window.removeEventListener('storage', handleStorage)
       window.removeEventListener('safe_approval_change', updateStatus)
     }
-  }, [emailKey])
+  }, [emailKey, googleSheetUrl])
 
-  const handleManualCheck = () => {
+  const handleManualCheck = async () => {
     setChecking(true)
-    setTimeout(() => {
-      const approved = checkCurrentApproval()
-      setIsApproved(approved)
-      setLastChecked(new Date())
-      setChecking(false)
-    }, 400)
+    if (googleSheetUrl && emailKey) {
+      try {
+        const res = await fetch(`${googleSheetUrl}?Action=GET_APPROVALS&_t=${Date.now()}`, { mode: 'cors' })
+        const json = await res.json()
+        if (json && json.data && json.data[emailKey]?.status === 'approved') {
+          setIsApproved(true)
+          const cur = load('safe_access_approvals', {})
+          cur[emailKey] = { ...cur[emailKey], status: 'approved' }
+          localStorage.setItem('safe_access_approvals', JSON.stringify(cur))
+        }
+      } catch (e) {}
+    }
+    const approved = checkCurrentApproval()
+    setIsApproved(approved)
+    setLastChecked(new Date())
+    setChecking(false)
   }
 
   const userName = user?.['Name'] || user?.['Full Name'] || 'Candidate'
