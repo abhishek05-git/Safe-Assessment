@@ -29,7 +29,7 @@ export default function SpectrumQuestion({ q, value, onChange }) {
   return (
     <div className="py-2">
       {/* Pole cards */}
-      <div className="grid grid-cols-2 gap-3 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 sm:mb-8">
         <div className={[
           'p-4 rounded-2xl border-2 transition-all duration-200',
           leanLeft ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white/60',

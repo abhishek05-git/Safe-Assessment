@@ -62,8 +62,8 @@ export default function InfoForm({ initialData, onHome, onContinue, user, onLogo
 
   return (
     <Shell onHome={onHome} user={user} onLogout={onLogout}>
-      <div className="max-w-lg mx-auto pt-8 slide-up mb-10">
-        <div className="glass p-8 md:p-10">
+      <div className="max-w-lg mx-auto pt-6 sm:pt-8 slide-up mb-10 px-1 sm:px-0">
+        <div className="glass p-5 sm:p-8 md:p-10">
           {/* Header */}
           <div className="flex items-center gap-4 mb-7">
             <div className="w-12 h-12 bg-sky/10 border border-sky/20 rounded-2xl flex items-center justify-center shrink-0">

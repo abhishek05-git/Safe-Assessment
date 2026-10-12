@@ -33,8 +33,8 @@ export default function OtpForm({ onHome, onVerify, expectedOtp, onResend, onBac
 
   return (
     <Shell onHome={onHome} user={user} onLogout={onLogout}>
-      <div className="max-w-md mx-auto pt-16 slide-up mb-10">
-        <div className="glass p-8 md:p-10 text-center">
+      <div className="max-w-md mx-auto pt-8 sm:pt-16 slide-up mb-10 px-1 sm:px-0">
+        <div className="glass p-5 sm:p-8 md:p-10 text-center">
           <div className="w-16 h-16 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <ShieldCheck className="w-8 h-8 text-emerald-500" />
           </div>

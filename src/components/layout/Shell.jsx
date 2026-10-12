@@ -18,30 +18,30 @@ export default function Shell({ children, onHome, right, user, onLogout }) {
       style={{ background: 'linear-gradient(135deg, #0A1F44 0%, #12356b 55%, #1B4080 100%)' }}
     >
       {/* ── Screen Header (Hidden on Print) ── */}
-      <header className="flex justify-between items-center px-6 py-5 text-white print:hidden">
+      <header className="flex justify-between items-center px-3.5 sm:px-6 py-3.5 sm:py-5 text-white print:hidden">
         <button
           onClick={onHome}
-          className="text-left group flex items-center gap-3 hover:opacity-90 transition-opacity"
+          className="text-left group flex items-center gap-2.5 sm:gap-3 hover:opacity-90 transition-opacity"
           aria-label="Go to home"
         >
           {/* Logo badge */}
-          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shrink-0 group-hover:bg-gray-50 transition-colors overflow-hidden">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-xl flex items-center justify-center shrink-0 group-hover:bg-gray-50 transition-colors overflow-hidden">
             <img src="/logo.png" alt="SAFE Ltd. Logo" className="w-full h-full object-contain p-1" />
           </div>
           <div>
-            <div className="font-heading font-bold text-xl tracking-tight leading-tight">SAFE Ltd.</div>
-            <div className="text-[11px] text-white/55 leading-tight">Sodhani Academy of Fintech Enablers Ltd.</div>
+            <div className="font-heading font-bold text-lg sm:text-xl tracking-tight leading-tight">SAFE Ltd.</div>
+            <div className="text-[10px] sm:text-[11px] text-white/55 leading-tight hidden xs:block sm:block">Sodhani Academy of Fintech Enablers Ltd.</div>
           </div>
         </button>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           {user && user['Name'] && onLogout && (
             <button
               onClick={onLogout}
-              className="flex items-center gap-1.5 text-white/60 text-sm hover:text-red-400 transition-colors px-3 py-2 rounded-xl hover:bg-white/10"
+              className="flex items-center gap-1.5 text-white/60 text-xs sm:text-sm hover:text-red-400 transition-colors px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl hover:bg-white/10"
               title="Log Out"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">Log out</span>
             </button>
           )}
@@ -67,7 +67,7 @@ export default function Shell({ children, onHome, right, user, onLogout }) {
       </div>
 
       {/* ── Content ── */}
-      <main className="px-4 pb-20 max-w-5xl mx-auto flex-1 print:max-w-none print:w-full print:p-0 print:m-0">
+      <main className="px-3 sm:px-4 pb-20 max-w-5xl mx-auto flex-1 w-full print:max-w-none print:w-full print:p-0 print:m-0">
         {children}
       </main>
 

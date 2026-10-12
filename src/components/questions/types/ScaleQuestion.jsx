@@ -58,7 +58,10 @@ export default function ScaleQuestion({ q, value, onChange, points = 5 }) {
                 title={labels[v] || `Option ${v}`}
                 aria-label={labels[v] || `Option ${v}`}
                 aria-pressed={isActive}
-                style={{ width: `${size}px`, height: `${size}px` }}
+                style={{
+                  width: `clamp(28px, calc(18px + 3vw), ${size}px)`,
+                  height: `clamp(28px, calc(18px + 3vw), ${size}px)`
+                }}
                 className={[
                   'rounded-full border-2 transition-all duration-200 cursor-pointer',
                   'hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2',
