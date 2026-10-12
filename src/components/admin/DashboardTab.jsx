@@ -29,6 +29,7 @@ export default function DashboardTab({ questions }) {
     const headers = [
       'Date',
       'Name',
+      'Time Taken',
       'Organization',
       'Location',
       'Gender',
@@ -42,6 +43,7 @@ export default function DashboardTab({ questions }) {
     const rows = results.map(r => {
       const date = r.date ? new Date(r.date).toLocaleDateString() : ''
       const name = r.user?.['Name'] || r.user?.['Full Name'] || ''
+      const timeTaken = r.timeSpent || r.user?.['Time Taken'] || ''
       const org = r.user?.['Name of the Organization'] || ''
       const loc = r.user?.['Location'] || ''
       const gender = r.user?.['Gender'] || ''
@@ -54,6 +56,7 @@ export default function DashboardTab({ questions }) {
       return [
         `"${date}"`,
         `"${name.replace(/"/g, '""')}"`,
+        `"${timeTaken.replace(/"/g, '""')}"`,
         `"${org.replace(/"/g, '""')}"`,
         `"${loc.replace(/"/g, '""')}"`,
         `"${gender.replace(/"/g, '""')}"`,

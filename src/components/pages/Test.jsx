@@ -1,10 +1,15 @@
-import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { ArrowLeft, ArrowRight, CheckCircle, Clock, AlertTriangle } from 'lucide-react'
 import Shell             from '../layout/Shell'
 import Button            from '../ui/Button'
 import ProgressBar       from '../ui/ProgressBar'
 import QuestionRenderer  from '../questions/QuestionRenderer'
 import { load, save }    from '../../hooks/useStore'
+
+// Total time: 30 minutes in milliseconds
+const TOTAL_TIME_MS = 30 * 60 * 1000
+// Warning threshold: 5 minutes in milliseconds
+const WARNING_TIME_MS = 5 * 60 * 1000
 
 // These types auto-advance to the next question 300 ms after selection.
 const AUTO_ADVANCE = new Set(['scale5', 'scale7', 'single', 'scenario', 'spectrum'])
@@ -18,13 +23,28 @@ const CAT_STYLES = {
   Identity: 'text-rose-700    bg-rose-50    border-rose-100',
 }
 
+const pad = (n, len = 2) => String(n).padStart(len, '0')
+
+// Format remaining milliseconds into MM:SS.ms (e.g. 29:58.42)
+const formatTimeWithMs = (ms) => {
+  if (ms <= 0) return '00:00.00'
+  const m = Math.floor(ms / 60000)
+  const s = Math.floor((ms % 60000) / 1000)
+  const milli = Math.floor((ms % 1000) / 10) // 2-digit centiseconds (00-99)
+  return `${pad(m)}:${pad(s)}.${pad(milli)}`
+}
+
+// Get or initialize persistent start time so page refresh doesn't reset countdown
+const getStartTime = () => {
+  const saved = load('safe_timer_start', null)
+  if (saved && typeof saved === 'number') return saved
+  const now = Date.now()
+  save('safe_timer_start', now)
+  return now
+}
+
 /**
- * Main assessment screen.
- *
- * Props:
- *  questions  — active (filtered) question array
- *  onHome     — navigate back to landing
- *  onFinish   — called with the full answers map when user submits
+ * Main assessment screen with 30-minute countdown timer and timeline.
  */
 export default function Test({ questions, onHome, onFinish, user, onLogout }) {
   const [answers, setAnswers] = useState(() => load('safe_progress', {}))
@@ -32,10 +52,45 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
     Math.min(load('safe_idx', 0), Math.max(questions.length - 1, 0))
   )
 
+  // Timer state
+  const [startTime] = useState(getStartTime)
+  const [remainingMs, setRemainingMs] = useState(() => {
+    const elapsed = Date.now() - startTime
+    return Math.max(0, TOTAL_TIME_MS - elapsed)
+  })
+
   const question  = questions[index]
   const answered  = Object.keys(answers).length
   const isLast    = index === questions.length - 1
   const missing   = questions.filter(q => q.required && answers[q.id] == null).length
+  const isWarning = remainingMs <= WARNING_TIME_MS && remainingMs > 0
+  const isExpired = remainingMs <= 0
+
+  const answersRef = useRef(answers)
+  answersRef.current = answers
+
+  /* ── Finish test with accurate time taken ─────────────────────── */
+  const handleFinishTest = () => {
+    const timeSpentMs = Math.min(TOTAL_TIME_MS, Date.now() - startTime)
+    onFinish(answersRef.current, timeSpentMs)
+  }
+
+  /* ── 30-Minute Countdown Interval with Milliseconds ──────────── */
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      const rem = Math.max(0, TOTAL_TIME_MS - elapsed)
+      setRemainingMs(rem)
+
+      if (rem <= 0) {
+        clearInterval(interval)
+        // Auto-finish when 30 minutes expire
+        handleFinishTest()
+      }
+    }, 35) // ~28 updates per second for smooth millisecond display
+
+    return () => clearInterval(interval)
+  }, [startTime])
 
   /* ── Navigate ─────────────────────────────────────── */
   const navigate = (dir) => {
@@ -71,11 +126,11 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
   /* ── Warn on unload ───────────────────────────────── */
   useEffect(() => {
     const handler = (e) => {
-      if (answered < questions.length) { e.preventDefault(); e.returnValue = '' }
+      if (answered < questions.length && remainingMs > 0) { e.preventDefault(); e.returnValue = '' }
     }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [answered, questions.length])
+  }, [answered, questions.length, remainingMs])
 
   if (!question) return null
 
@@ -85,9 +140,70 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
   const navStart = Math.max(0, Math.min(index - 3, questions.length - 7))
   const navSlice = questions.slice(navStart, navStart + 7)
 
+  // Timeline progress percentage (100% at start, goes to 0%)
+  const timelinePct = Math.min(100, Math.max(0, (remainingMs / TOTAL_TIME_MS) * 100))
+
+  /* ── Top-Right Timer Badge ────────────────────────── */
+  const timerBadge = (
+    <div
+      id="test-timer"
+      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border font-mono font-bold transition-all duration-300 shadow-sm ${
+        isWarning
+          ? 'bg-red-500/20 border-red-500 text-red-400 animate-pulse shadow-red-500/20'
+          : isExpired
+            ? 'bg-red-600 text-white border-red-700'
+            : 'bg-white/10 border-white/20 text-white shadow-black/10'
+      }`}
+      title={isWarning ? 'Less than 5 minutes remaining!' : 'Time Remaining (30 Min limit)'}
+    >
+      <Clock className={`w-4 h-4 shrink-0 ${isWarning ? 'text-red-400' : 'text-sky-300'}`} />
+      <span className="text-xs sm:text-sm tracking-wider font-extrabold tabular-nums">
+        {formatTimeWithMs(remainingMs)}
+      </span>
+      {isWarning && (
+        <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-red-500 text-white tracking-widest hidden sm:inline">
+          5m Left
+        </span>
+      )}
+    </div>
+  )
+
   return (
-    <Shell onHome={onHome} user={user} onLogout={onLogout}>
-      {/* ── Top progress bar ── */}
+    <Shell
+      onHome={onHome}
+      user={user}
+      onLogout={onLogout}
+      right={timerBadge}
+    >
+      {/* ── 30-Min Timeline Bar ── */}
+      <div className={`mb-4 glass p-3.5 px-4 md:px-5 transition-colors ${
+        isWarning ? 'border-red-400/50 bg-red-50/70' : ''
+      }`}>
+        <div className="flex justify-between items-center text-xs mb-1.5">
+          <span className="font-semibold text-slate-600 flex items-center gap-1.5">
+            <Clock className={`w-3.5 h-3.5 ${isWarning ? 'text-red-500 animate-pulse' : 'text-sky'}`} />
+            <span>Assessment Timeline (30 Min Limit)</span>
+          </span>
+          <span className={`font-mono font-bold text-xs tabular-nums ${
+            isWarning ? 'text-red-600 font-black' : 'text-slate-700'
+          }`}>
+            {formatTimeWithMs(remainingMs)} left
+          </span>
+        </div>
+        {/* Timeline depleting bar */}
+        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-100 ease-linear ${
+              isWarning
+                ? 'bg-gradient-to-r from-red-500 via-rose-500 to-red-600 shadow-sm shadow-red-400/50'
+                : 'bg-gradient-to-r from-sky to-blue-600'
+            }`}
+            style={{ width: `${timelinePct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* ── Question Progress Bar ── */}
       <div className="mb-5">
         <ProgressBar value={answered} max={questions.length} />
       </div>
@@ -159,7 +275,7 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
               variant="primary"
               size="md"
               disabled={missing > 0}
-              onClick={() => onFinish(answers)}
+              onClick={handleFinishTest}
               icon={<CheckCircle className="w-4 h-4" />}
             >
               {missing > 0 ? `${missing} required left` : 'Finish'}

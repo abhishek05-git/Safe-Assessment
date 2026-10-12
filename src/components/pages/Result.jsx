@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Download, RotateCcw, Home } from 'lucide-react'
+import { Download, RotateCcw, Home, Clock } from 'lucide-react'
 import Shell from '../layout/Shell'
 import Button from '../ui/Button'
 import { profiles as DEFAULT_PROFILES } from '../../data/config'
@@ -202,6 +202,16 @@ export default function Result({ result, user, profiles, sections, onHome, onRet
                 <p className="text-xs print:text-[10px] font-semibold text-slate-400 italic">
                   "{profile.tagline}"
                 </p>
+              )}
+
+              {/* Assessment Completion Time */}
+              {(result.timeSpent || user?.['Time Taken']) && (
+                <div className="pt-1.5 flex flex-wrap items-center justify-center md:justify-start print:justify-start gap-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold print:text-[10px] print:px-2 print:py-0.5">
+                    <Clock className="w-3.5 h-3.5 print:w-3 print:h-3 text-emerald-600" />
+                    <span>Completed in <strong>{result.timeSpent || user?.['Time Taken']}</strong> (30 min limit)</span>
+                  </div>
+                </div>
               )}
             </div>
 

@@ -192,18 +192,39 @@ export default function App() {
   }
 
   /* ── Called when the user submits the final answer ── */
-  const handleFinish = (answers) => {
+  const handleFinish = (answers, durationMs) => {
     const r = score(qs, answers, D.dimensions)
-    setResult(r)
+
+    // Calculate accurate completion time (capped at 30 minutes)
+    const timeSpentMs = durationMs != null ? durationMs : (Date.now() - (load('safe_timer_start', Date.now())))
+    const mins = Math.floor(timeSpentMs / 60000)
+    const secs = Math.floor((timeSpentMs % 60000) / 1000)
+    const formattedTime = `${mins}m ${secs}s`
+
+    const userWithTime = {
+      ...user,
+      'Time Taken': formattedTime
+    }
+
+    const finalResult = {
+      ...r,
+      timeSpent: formattedTime,
+      timeSpentMs
+    }
+
+    setResult(finalResult)
+    setUser(userWithTime)
 
     // Persist result record locally
     const record = {
       id: Date.now(),
-      user,
+      user: userWithTime,
       date: new Date().toISOString(),
       answers,
       code: r.code,
       type: r.type,
+      timeSpent: formattedTime,
+      timeSpentMs,
       reportVersion: 1,
     }
 
@@ -216,13 +237,14 @@ export default function App() {
     )
     save('safe_results', [...filteredResults, record])
 
-    // Save to Google Sheets with full type name (e.g. Idea Igniter)
+    // Save to Google Sheets with full type name (e.g. The Campaigner)
     const profileTitle = profiles[r.code]?.name || r.type
-    sendToSheets(user, r.type, profileTitle)
+    sendToSheets(userWithTime, r.type, profileTitle)
 
     // Clear in-progress state
     localStorage.removeItem('safe_progress')
     localStorage.removeItem('safe_idx')
+    localStorage.removeItem('safe_timer_start')
 
     setView('result')
   }
@@ -231,6 +253,7 @@ export default function App() {
   const handleRetake = () => {
     localStorage.removeItem('safe_progress')
     localStorage.removeItem('safe_idx')
+    localStorage.removeItem('safe_timer_start')
     setResult(null)
     setView('test')
   }
@@ -239,9 +262,10 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('safe_progress')
     localStorage.removeItem('safe_idx')
+    localStorage.removeItem('safe_timer_start')
     setUser({})
-    setOtpState({ code: '', verified: false })
     setResult(null)
+    setOtpState({ code: '', verified: false })
     setView('landing')
   }
 
