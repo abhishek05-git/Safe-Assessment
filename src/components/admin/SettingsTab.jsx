@@ -37,6 +37,32 @@ export default function SettingsTab({ settings, setSettings }) {
         </label>
       ))}
 
+      {/* Candidate Access Gate Settings */}
+      <div className="pt-6 border-t border-slate-200 mt-6 space-y-3">
+        <h4 className="font-heading font-bold text-slate-700 text-sm">🔐 Candidate Access Control</h4>
+        <label
+          className={[
+            'flex items-start gap-3 p-4 rounded-2xl border-2 cursor-pointer transition-all',
+            settings.requireApproval !== false ? 'border-sky bg-sky/5' : 'border-slate-200 bg-white hover:border-slate-300',
+          ].join(' ')}
+        >
+          <input
+            type="checkbox"
+            className="w-4 h-4 accent-sky mt-0.5"
+            checked={settings.requireApproval !== false}
+            onChange={e => setSettings({ ...settings, requireApproval: e.target.checked })}
+          />
+          <div>
+            <div className={`font-medium text-sm ${settings.requireApproval !== false ? 'text-navy' : 'text-slate-500'}`}>
+              Require Admin Approval to Start Assessment
+            </div>
+            <div className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+              When enabled, participants cannot begin the 30-minute test after OTP verification until an administrator approves their access.
+            </div>
+          </div>
+        </label>
+      </div>
+
       {/* Security Settings */}
       <div className="pt-6 border-t border-slate-200 mt-6 space-y-3">
         <h4 className="font-heading font-bold text-slate-700 text-sm">🔒 Security Settings</h4>

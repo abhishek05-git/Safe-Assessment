@@ -3,18 +3,11 @@ import { X, Lock } from 'lucide-react'
 import Shell         from '../layout/Shell'
 import Button        from '../ui/Button'
 import DashboardTab  from '../admin/DashboardTab'
+import AccessTab     from '../admin/AccessTab'
 import QuestionsTab  from '../admin/QuestionsTab'
 import ProfilesTab   from '../admin/ProfilesTab'
 import ReportTab     from '../admin/ReportTab'
 import SettingsTab   from '../admin/SettingsTab'
-
-const TABS = [
-  { id: 'dashboard', label: '📊 Dashboard' },
-  { id: 'questions', label: '❓ Questions' },
-  { id: 'profiles',  label: '👤 Profiles'  },
-  { id: 'report',    label: '📋 Report'    },
-  { id: 'settings',  label: '⚙️ Settings'  },
-]
 
 // The hardcoded password for now
 const ADMIN_PASSWORD = 'admin'
@@ -28,6 +21,7 @@ export default function Admin({
   profiles,    setProfiles,
   sections,    setSections,
   settings,    setSettings,
+  approvals,   setApprovals,
 }) {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -98,6 +92,21 @@ export default function Admin({
     )
   }
 
+  const pendingCount = Object.values(approvals || {}).filter(item => item.status !== 'approved').length
+
+  const tabs = [
+    { id: 'dashboard', label: '📊 Dashboard' },
+    {
+      id: 'access',
+      label: pendingCount > 0 ? `🔐 Access (${pendingCount} pending)` : '🔐 Candidate Access',
+      highlight: pendingCount > 0
+    },
+    { id: 'questions', label: '❓ Questions' },
+    { id: 'profiles',  label: '👤 Profiles'  },
+    { id: 'report',    label: '📋 Report'    },
+    { id: 'settings',  label: '⚙️ Settings'  },
+  ]
+
   return (
     <Shell
       onHome={onExit}
@@ -134,16 +143,18 @@ export default function Admin({
 
         {/* Tab bar */}
         <div className="flex gap-1 flex-wrap mb-7 bg-slate-100 rounded-2xl p-1">
-          {TABS.map(t => (
+          {tabs.map(t => (
             <button
               key={t.id}
               id={`admin-tab-${t.id}`}
               onClick={() => setActiveTab(t.id)}
               className={[
-                'flex-1 min-w-max px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200',
+                'flex-1 min-w-max px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-1.5',
                 activeTab === t.id
                   ? 'bg-white text-navy shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700',
+                  : t.highlight
+                    ? 'text-amber-700 bg-amber-50/80 hover:bg-amber-100/60 font-bold'
+                    : 'text-slate-500 hover:text-slate-700',
               ].join(' ')}
             >
               {t.label}
@@ -154,7 +165,14 @@ export default function Admin({
         {/* Tab content — key forces fade-in on tab change */}
         <div key={activeTab} className="fade">
           {activeTab === 'dashboard' && (
-            <DashboardTab questions={questions} />
+            <DashboardTab
+              questions={questions}
+              pendingAccessCount={pendingCount}
+              onGoToAccess={() => setActiveTab('access')}
+            />
+          )}
+          {activeTab === 'access' && (
+            <AccessTab approvals={approvals} setApprovals={setApprovals} />
           )}
           {activeTab === 'questions' && (
             <QuestionsTab questions={questions} setQuestions={setQuestions} />

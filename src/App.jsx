@@ -7,6 +7,7 @@ import { score } from './engine/scoring'
 import Landing from './components/pages/Landing'
 import InfoForm from './components/pages/InfoForm'
 import OtpForm from './components/pages/OtpForm'
+import WaitingApproval from './components/pages/WaitingApproval'
 import Test from './components/pages/Test'
 import Result from './components/pages/Result'
 import Admin from './components/pages/Admin'
@@ -17,12 +18,13 @@ const DEFAULT_SETTINGS = {
     ['Full Name', 'Email', 'Mobile Number', 'Age', 'Organization', 'College', 'Designation', 'Department']
       .map(k => [k, k === 'Full Name'])
   ),
+  requireApproval: true,
 }
 
 /**
  * Root application component — manages view routing and all persisted state.
  *
- * Views: 'landing' | 'info' | 'test' | 'result' | 'admin'
+ * Views: 'landing' | 'info' | 'otp' | 'waiting' | 'test' | 'result' | 'admin'
  *
  * All question/profile/section/settings state is persisted to localStorage
  * via useStore so Admin changes survive page refresh.
@@ -33,6 +35,7 @@ export default function App() {
   const [profiles, setProfiles] = useStore('safe_profiles', D.profiles)
   const [sections, setSections] = useStore('safe_sections', D.reportSections)
   const [settings, setSettings] = useStore('safe_settings', DEFAULT_SETTINGS)
+  const [approvals, setApprovals] = useStore('safe_access_approvals', {})
 
   const [user, setUser] = useStore('safe_user', {})
   const [result, setResult] = useState(null)
@@ -129,6 +132,38 @@ export default function App() {
     setView('otp')
   }
 
+  /* ── Candidate Approval Checks ── */
+  const isCandidateApproved = (targetUser) => {
+    if (settings?.requireApproval === false) return true
+    const u = targetUser || user
+    const email = (u?.['Email Id'] || u?.['Email'] || '').trim().toLowerCase()
+    if (!email) return false
+    return approvals[email]?.status === 'approved'
+  }
+
+  const registerCandidateAccess = (targetUser) => {
+    const u = targetUser || user
+    const email = (u?.['Email Id'] || u?.['Email'] || '').trim().toLowerCase()
+    if (!email) return
+
+    if (!approvals[email]) {
+      const updated = {
+        ...approvals,
+        [email]: {
+          email,
+          name: u['Name'] || u['Full Name'] || 'Participant',
+          org: u['Name of the Organization'] || u['Organization'] || '',
+          phone: u['Phone Number'] || '',
+          status: 'pending',
+          requestedAt: new Date().toISOString(),
+          approvedAt: null,
+        }
+      }
+      setApprovals(updated)
+      window.dispatchEvent(new Event('safe_approval_change'))
+    }
+  }
+
   /* ── Start Assessment ── */
   const handleStart = () => {
     // If user is already identified (has an email or name)
@@ -146,9 +181,14 @@ export default function App() {
         return
       }
 
-      // If already verified, go straight to test
+      // If already verified, check admin approval before allowing into test
       if (otpState.verified) {
-        setView('test')
+        registerCandidateAccess(user)
+        if (isCandidateApproved(user)) {
+          setView('test')
+        } else {
+          setView('waiting')
+        }
       } else {
         // Go to OTP screen
         advanceToOtp(user, false)
@@ -255,7 +295,12 @@ export default function App() {
     localStorage.removeItem('safe_idx')
     localStorage.removeItem('safe_timer_start')
     setResult(null)
-    setView('test')
+    if (isCandidateApproved(user)) {
+      setView('test')
+    } else {
+      registerCandidateAccess(user)
+      setView('waiting')
+    }
   }
 
   /* ── Logout / Change User — clear everything and restart ── */
@@ -302,12 +347,39 @@ export default function App() {
             setResult(r)
             setView('result')
           } else {
-            setView('test')
+            registerCandidateAccess(user)
+            if (isCandidateApproved(user)) {
+              setView('test')
+            } else {
+              setView('waiting')
+            }
           }
         }}
         onResend={() => advanceToOtp(user, true)}
         onBack={() => setView('info')}
         user={user}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (view === 'waiting') {
+    return (
+      <WaitingApproval
+        user={user}
+        onHome={() => setView('landing')}
+        onStartTest={() => {
+          // Double-check real-time approval from localStorage before starting test
+          const currentApprovals = load('safe_access_approvals', {})
+          const email = (user['Email Id'] || user['Email'] || '').trim().toLowerCase()
+          const isApproved = settings?.requireApproval === false || currentApprovals[email]?.status === 'approved'
+
+          if (isApproved) {
+            setView('test')
+          } else {
+            alert('Your session has not been approved by an administrator yet.')
+          }
+        }}
         onLogout={handleLogout}
       />
     )
@@ -347,6 +419,7 @@ export default function App() {
         profiles={profiles} setProfiles={setProfiles}
         sections={sections} setSections={setSections}
         settings={settings} setSettings={setSettings}
+        approvals={approvals} setApprovals={setApprovals}
       />
     )
   }

@@ -1,11 +1,10 @@
-import React from 'react'
-import { BarChart3, Users, CheckSquare, BookOpen, Trash2, Download } from 'lucide-react'
+import { BarChart3, Users, CheckSquare, BookOpen, Trash2, Download, Clock, ArrowRight } from 'lucide-react'
 import { useStore } from '../../hooks/useStore'
 
 /**
  * Admin dashboard — shows completion stats and personality distribution.
  */
-export default function DashboardTab({ questions }) {
+export default function DashboardTab({ questions, pendingAccessCount = 0, onGoToAccess }) {
   const [results, setResults] = useStore('safe_results', [])
   const dist    = {}
   results.forEach(r => { dist[r.type] = (dist[r.type] || 0) + 1 })
@@ -80,6 +79,33 @@ export default function DashboardTab({ questions }) {
 
   return (
     <div className="space-y-7">
+      {/* Pending Access Notification Alert */}
+      {pendingAccessCount > 0 && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 shrink-0">
+              <Clock className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-amber-900">
+                {pendingAccessCount} Candidate{pendingAccessCount > 1 ? 's' : ''} Awaiting Access Approval
+              </div>
+              <div className="text-xs text-amber-700">
+                Candidates cannot start the 30-minute test until approved.
+              </div>
+            </div>
+          </div>
+          {onGoToAccess && (
+            <button
+              onClick={onGoToAccess}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm shrink-0 cursor-pointer"
+            >
+              Review & Approve <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid md:grid-cols-3 gap-4">
         {stats.map(({ label, value, icon: Icon, color }) => (
