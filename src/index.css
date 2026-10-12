@@ -1,0 +1,177 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #0A1F44;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', sans-serif;
+  }
+}
+
+@layer components {
+  /* ── Glassmorphism ── */
+  .glass {
+    @apply bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/30;
+  }
+  .glass-dark {
+    @apply bg-white/10 backdrop-blur-xl rounded-3xl border border-white/15;
+  }
+
+  /* ── Animations ── */
+  .fade      { animation: fadeIn  0.40s ease-out both; }
+  .slide-up  { animation: slideUp 0.45s ease-out both; }
+  .slide-up-1{ animation: slideUp 0.45s ease-out 0.10s both; }
+  .slide-up-2{ animation: slideUp 0.45s ease-out 0.20s both; }
+  .slide-up-3{ animation: slideUp 0.45s ease-out 0.30s both; }
+  .slide-up-4{ animation: slideUp 0.45s ease-out 0.40s both; }
+}
+
+/* ── Keyframes ── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px);  }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* ── Custom Range Slider ── */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 99px;
+  background: linear-gradient(
+    to right,
+    #0EA5E9 0%,
+    #0EA5E9 var(--progress, 50%),
+    #e2e8f0 var(--progress, 50%),
+    #e2e8f0 100%
+  );
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: white;
+  border: 3px solid #0EA5E9;
+  margin-top: -9px;
+  box-shadow: 0 2px 10px rgba(14,165,233,0.45);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 14px rgba(14,165,233,0.55);
+}
+input[type='range']::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: white;
+  border: 3px solid #0EA5E9;
+  box-shadow: 0 2px 10px rgba(14,165,233,0.45);
+  cursor: pointer;
+}
+input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 99px;
+  background: #e2e8f0;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar       { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ── Print & PDF Alignment Styles ── */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm 10mm 12mm;
+  }
+
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 12.5px !important;
+    line-height: 1.45 !important;
+  }
+
+  /* Clear full-screen background gradients */
+  [style*="linear-gradient(135deg, #0A1F44"],
+  .min-h-screen {
+    background: #ffffff !important;
+    min-height: auto !important;
+  }
+
+  /* Glassmorphism reset to clean print borders */
+  .glass, .glass-dark {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* Prevent page-break cuts across critical cards and sections */
+  .break-inside-avoid,
+  .page-break-inside-avoid,
+  .print-avoid-break {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Prevent awkward heading separation */
+  h1, h2, h3, h4 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* Hide web elements */
+  .no-print,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Explicitly unhide print-only elements */
+  .print\:block {
+    display: block !important;
+  }
+  .print\:flex {
+    display: flex !important;
+  }
+  .print\:grid {
+    display: grid !important;
+  }
+}

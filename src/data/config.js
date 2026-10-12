@@ -1,0 +1,640 @@
+// ALL editable content lives here (Admin panel overrides are saved in localStorage).
+export const dimensions = [
+  { key: 'EI', name: 'Energy', poles: ['I', 'E'], labels: { I: 'Introverted', E: 'Extraverted' } },
+  { key: 'ON', name: 'Mind', poles: ['S', 'N'], labels: { S: 'Observant', N: 'Intuitive' } },
+  { key: 'TF', name: 'Nature', poles: ['T', 'F'], labels: { T: 'Thinking', F: 'Feeling' } },
+  { key: 'JP', name: 'Tactics', poles: ['J', 'P'], labels: { J: 'Judging', P: 'Prospecting' } },
+  { key: 'AT', name: 'Identity', poles: ['A', 'T'], labels: { A: 'Assertive', T: 'Turbulent' } }]
+const sc = (a, b) => ({ 1: a, 2: a, 3: 'neutral', 4: b, 5: b })
+const B = { weight: 1, required: true, active: true }
+export const questions = [
+  {
+    "id": "Q001",
+    "question": "I prefer working in a lively, active environment because i thrive on energy and interaction.",
+    "category": "Energy",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "I",
+      "2": "I",
+      "3": "neutral",
+      "4": "E",
+      "5": "E"
+    }
+  },
+  {
+    "id": "Q002",
+    "question": "When faced with a challenge, I reflect on it privately before taking action.",
+    "category": "Energy",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "E",
+      "2": "E",
+      "3": "neutral",
+      "4": "I",
+      "5": "I"
+    }
+  },
+  {
+    "id": "Q003",
+    "question": "I find networking events exciting and enjoyable.",
+    "category": "Energy",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "I",
+      "2": "I",
+      "3": "neutral",
+      "4": "E",
+      "5": "E"
+    }
+  },
+  {
+    "id": "Q004",
+    "question": "After a long day, I need time alone to recharge.",
+    "category": "Energy",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "E",
+      "2": "E",
+      "3": "neutral",
+      "4": "I",
+      "5": "I"
+    }
+  },
+  {
+    "id": "Q005",
+    "question": "When starting a new project, I prefer working in a team.",
+    "category": "Energy",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "I",
+      "2": "I",
+      "3": "neutral",
+      "4": "E",
+      "5": "E"
+    }
+  },
+  {
+    "id": "Q006",
+    "question": "At meetings, I prefer to listen and contribute after thinking.",
+    "category": "Energy",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "E",
+      "2": "E",
+      "3": "neutral",
+      "4": "I",
+      "5": "I"
+    }
+  },
+  {
+    "id": "Q007",
+    "question": "I enjoy leading social activities at work i love taking the lead.",
+    "category": "Energy",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "I",
+      "2": "I",
+      "3": "neutral",
+      "4": "E",
+      "5": "E"
+    }
+  },
+  {
+    "id": "Q008",
+    "question": "I am more likely to observe and wait for the right time to speak.",
+    "category": "Energy",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "E",
+      "2": "E",
+      "3": "neutral",
+      "4": "I",
+      "5": "I"
+    }
+  },
+  {
+    "id": "Q009",
+    "question": "I typically make friends quickly.",
+    "category": "Energy",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "I",
+      "2": "I",
+      "3": "neutral",
+      "4": "E",
+      "5": "E"
+    }
+  },
+  {
+    "id": "Q026",
+    "question": "I rely more on theoretical ideas and concepts.",
+    "category": "Mind",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "S",
+      "2": "S",
+      "3": "neutral",
+      "4": "N",
+      "5": "N"
+    }
+  },
+  {
+    "id": "Q027",
+    "question": "When solving problems, I focus on details and what is immediately in front of you.",
+    "category": "Mind",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "N",
+      "2": "N",
+      "3": "neutral",
+      "4": "S",
+      "5": "S"
+    }
+  },
+  {
+    "id": "Q028",
+    "question": "I prefer to. Explore new, untested methods.",
+    "category": "Mind",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "S",
+      "2": "S",
+      "3": "neutral",
+      "4": "N",
+      "5": "N"
+    }
+  },
+  {
+    "id": "Q029",
+    "question": "In learning new skills, I prefer step-by-step instructions.",
+    "category": "Mind",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "N",
+      "2": "N",
+      "3": "neutral",
+      "4": "S",
+      "5": "S"
+    }
+  },
+  {
+    "id": "Q030",
+    "question": "When discussing plans, I enjoy thinking about future possibilities and potential.",
+    "category": "Mind",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "S",
+      "2": "S",
+      "3": "neutral",
+      "4": "N",
+      "5": "N"
+    }
+  },
+  {
+    "id": "Q031",
+    "question": "I tend to pay close attention to specific facts and figures.",
+    "category": "Mind",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "N",
+      "2": "N",
+      "3": "neutral",
+      "4": "S",
+      "5": "S"
+    }
+  },
+  {
+    "id": "Q032",
+    "question": "In your day-to-day work, I prefer new challenges and changing situations.",
+    "category": "Mind",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "S",
+      "2": "S",
+      "3": "neutral",
+      "4": "N",
+      "5": "N"
+    }
+  },
+  {
+    "id": "Q033",
+    "question": "When presented with a new project, I focus on the resources and limitations available.",
+    "category": "Mind",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "N",
+      "2": "N",
+      "3": "neutral",
+      "4": "S",
+      "5": "S"
+    }
+  },
+  {
+    "id": "Q034",
+    "question": "I am more comfortable exploring abstract concepts and ideas.",
+    "category": "Mind",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "S",
+      "2": "S",
+      "3": "neutral",
+      "4": "N",
+      "5": "N"
+    }
+  },
+  {
+    "id": "Q051",
+    "question": "When making decisions, I prioritize logical, objective reasoning.",
+    "category": "Nature",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "F",
+      "2": "F",
+      "3": "neutral",
+      "4": "T",
+      "5": "T"
+    }
+  },
+  {
+    "id": "Q052",
+    "question": "I believe it’s more important to be compassionate and understanding.",
+    "category": "Nature",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "T",
+      "2": "T",
+      "3": "neutral",
+      "4": "F",
+      "5": "F"
+    }
+  },
+  {
+    "id": "Q053",
+    "question": "When handling conflict, I address the issue directly and logically.",
+    "category": "Nature",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "F",
+      "2": "F",
+      "3": "neutral",
+      "4": "T",
+      "5": "T"
+    }
+  },
+  {
+    "id": "Q054",
+    "question": "In a team, I prefer to ensure that everyone feels valued and included.",
+    "category": "Nature",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "T",
+      "2": "T",
+      "3": "neutral",
+      "4": "F",
+      "5": "F"
+    }
+  },
+  {
+    "id": "Q055",
+    "question": "When providing feedback, I focus on facts and areas for improvement.",
+    "category": "Nature",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "F",
+      "2": "F",
+      "3": "neutral",
+      "4": "T",
+      "5": "T"
+    }
+  },
+  {
+    "id": "Q056",
+    "question": "I tend to trust personal values and emotions.",
+    "category": "Nature",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "T",
+      "2": "T",
+      "3": "neutral",
+      "4": "F",
+      "5": "F"
+    }
+  },
+  {
+    "id": "Q057",
+    "question": "When making a difficult decision, I focus on what is logically correct.",
+    "category": "Nature",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "F",
+      "2": "F",
+      "3": "neutral",
+      "4": "T",
+      "5": "T"
+    }
+  },
+  {
+    "id": "Q058",
+    "question": "I feel more comfortable basing decisions on personal values and empathy.",
+    "category": "Nature",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "T",
+      "2": "T",
+      "3": "neutral",
+      "4": "F",
+      "5": "F"
+    }
+  },
+  {
+    "id": "Q059",
+    "question": "At work, I prefer to handle tasks with clarity and precision.",
+    "category": "Nature",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "F",
+      "2": "F",
+      "3": "neutral",
+      "4": "T",
+      "5": "T"
+    }
+  },
+  {
+    "id": "Q076",
+    "question": "I prefer your day to be. Flexible and spontaneous.",
+    "category": "Tactics",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "J",
+      "2": "J",
+      "3": "neutral",
+      "4": "P",
+      "5": "P"
+    }
+  },
+  {
+    "id": "Q077",
+    "question": "When completing tasks, I work steadily until completion.",
+    "category": "Tactics",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "P",
+      "2": "P",
+      "3": "neutral",
+      "4": "J",
+      "5": "J"
+    }
+  },
+  {
+    "id": "Q078",
+    "question": "I feel more comfortable when there are open possibilities and options.",
+    "category": "Tactics",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "J",
+      "2": "J",
+      "3": "neutral",
+      "4": "P",
+      "5": "P"
+    }
+  },
+  {
+    "id": "Q079",
+    "question": "In your work routine, I prefer having a clear schedule and knowing what’s coming next.",
+    "category": "Tactics",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "P",
+      "2": "P",
+      "3": "neutral",
+      "4": "J",
+      "5": "J"
+    }
+  },
+  {
+    "id": "Q080",
+    "question": "When making decisions, I prefer to keep your options open as long as possible.",
+    "category": "Tactics",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "J",
+      "2": "J",
+      "3": "neutral",
+      "4": "P",
+      "5": "P"
+    }
+  },
+  {
+    "id": "Q081",
+    "question": "When planning a project, I break it down into structured steps and deadlines.",
+    "category": "Tactics",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "P",
+      "2": "P",
+      "3": "neutral",
+      "4": "J",
+      "5": "J"
+    }
+  },
+  {
+    "id": "Q082",
+    "question": "I feel more stressed when you have to commit to decisions too early.",
+    "category": "Tactics",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "J",
+      "2": "J",
+      "3": "neutral",
+      "4": "P",
+      "5": "P"
+    }
+  },
+  {
+    "id": "Q083",
+    "question": "When preparing for a meeting or presentation, I have everything organized and ready well in advance.",
+    "category": "Tactics",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "P",
+      "2": "P",
+      "3": "neutral",
+      "4": "J",
+      "5": "J"
+    }
+  },
+  {
+    "id": "Q084",
+    "question": "In your daily life, I enjoy mixing things up and trying new approaches.",
+    "category": "Tactics",
+    "type": "scale5",
+    "weight": 1,
+    "required": true,
+    "active": true,
+    "scoring": {
+      "1": "J",
+      "2": "J",
+      "3": "neutral",
+      "4": "P",
+      "5": "P"
+    }
+  }
+]
+const P = (code, name, tagline, color, image = '', overview = '') => ({
+  code, name, tagline, color, image,
+  overview: overview || `The ${name} blends the ${code} preferences into a distinctive way of thinking, communicating and working.`,
+  strengths: ['Clear working style', 'Reliable contribution', 'Growth mindset'],
+  challenges: ['May overlook opposite viewpoints', 'Needs deliberate stress recovery'],
+  career: ['Explore roles that reward your natural style', 'Look for environments matching your pace'],
+  growth: ['Seek feedback regularly', 'Stretch into your least-used preference'],
+  relationships: ['State your communication preferences', 'Invite differing views'],
+  team: ['Brings consistent strengths', 'Values clarity on roles']
+})
+
+export const profiles = Object.fromEntries([
+  // Analysts (Purple theme)
+  ['INTJ', 'The Architect', 'Imaginative and strategic thinkers with a plan for everything.', '#6D28D9', '/profiles/intj.svg',
+    'Architects are imaginative and strategic thinkers, with a plan for everything. They thrive on turning ideas into workable reality, applying logic and rigorous analysis to complex systems.'],
+  ['INTP', 'The Logician', 'Innovative inventors with an unquenchable thirst for knowledge.', '#7C3AED', '/profiles/intp.svg',
+    'Logicians pride themselves on their unique perspectives and vigorous intellect. They cannot help but puzzle over the mysteries of the universe and love analyzing patterns and theories.'],
+  ['ENTJ', 'The Commander', 'Bold, imaginative, and strong-willed leaders, always finding a way.', '#5B21B6', '/profiles/entj.svg',
+    'Commanders are natural-born leaders who embody charisma and confidence. They project authority in a way that draws crowds together behind a common goal, executing vision with decisive drive.'],
+  ['ENTP', 'The Debater', 'Smart and curious thinkers who cannot resist an intellectual challenge.', '#8B5CF6', '/profiles/entp.svg',
+    "Debaters are the ultimate devil's advocates, thriving on the process of shredding arguments and beliefs to uncover deeper truths. They are bold, inventive, and agile thinkers."],
+
+  // Diplomats (Green theme / Purple for Campaigner)
+  ['INFJ', 'The Advocate', 'Quiet and mystical, yet very inspiring and tireless idealists.', '#047857', '/profiles/infj.svg',
+    'Advocates are quiet and mystical, yet very inspiring and tireless idealists. They have an inborn sense of idealism and morality, accompanied by decisiveness and value-driven purpose.'],
+  ['INFP', 'The Mediator', 'Poetic, kind, and altruistic people, always eager to help a good cause.', '#059669', '/profiles/infp.svg',
+    'Mediators are true idealists, always looking for the hint of good in even the worst of people and events, searching for ways to make things better with deep compassion and authenticity.'],
+  ['ENFJ', 'The Protagonist', 'Charismatic and inspiring leaders, able to mesmerize their listeners.', '#0F766E', '/profiles/enfj.svg',
+    'Protagonists are inspiring leaders who effortlessly guide others toward growth. Driven by deep empathy and purpose, they bring people together and spark positive impact in their communities.'],
+  ['ENFP', 'The Campaigner', 'Free spirits living among us. Often the life of the party.', '#7048A0', '/profiles/enfp-avatar.png',
+    'ENFPs are free spirits living among us. They are often the life of the party and enjoy deep social and emotional connections with others. They are charming, energetic and compassionate. They see life as a complex construct but through emotion and compassion, interested in deeper meaning.'],
+
+  // Sentinels (Blue / Cyan theme)
+  ['ISTJ', 'The Logistician', 'Practical and fact-minded individuals, whose reliability cannot be doubted.', '#0369A1', '/profiles/istj.svg',
+    'Logisticians are practical and fact-minded, driven by duty and integrity. They take pride in their work ethic and reliability, building organized, dependable foundations everywhere they go.'],
+  ['ISFJ', 'The Defender', 'Dedicated and warm protectors, always ready to defend their loved ones.', '#0284C7', '/profiles/isfj.svg',
+    'Defenders are dedicated and warm protectors, bringing thoroughness and patient care to everything they touch. They remember details others miss and ensure their teams and families feel secure.'],
+  ['ESTJ', 'The Executive', 'Excellent administrators, unsurpassed at managing things or people.', '#1D4ED8', '/profiles/estj.svg',
+    'Executives are representatives of tradition and order, utilizing their understanding of what is right, wrong, and socially acceptable to bring families and communities together with clear direction.'],
+  ['ESFJ', 'The Consul', 'Extraordinarily caring, social, and popular people, always eager to help.', '#0891B2', '/profiles/esfj.svg',
+    'Consuls are the cheerleaders and organizers of their circles. Attentive and community-minded, they foster harmony and support, ensuring everyone is included and appreciated.'],
+
+  // Explorers (Amber / Gold / Orange theme)
+  ['ISTP', 'The Virtuoso', 'Bold and practical experimenters, masters of all kinds of tools.', '#D97706', '/profiles/istp.svg',
+    'Virtuosos love to explore with their hands and their eyes, touching and examining the world around them with cool rationalism and spirited curiosity. They are natural troubleshooters and agile makers.'],
+  ['ISFP', 'The Adventurer', 'Flexible and charming artists, always ready to explore and experience.', '#EAB308', '/profiles/isfp.svg',
+    'Adventurers are spontaneous, expressive creators who live in a colorful, sensual world. They love breaking conventions, experimenting with aesthetics, and following their passions wherever they lead.'],
+  ['ESTP', 'The Entrepreneur', 'Smart, energetic, and perceptive people who truly enjoy living on the edge.', '#F59E0B', '/profiles/estp.svg',
+    'Entrepreneurs are vibrant catalysts who thrive in the eye of the storm. Energetic, action-oriented, and perceptive, they excel at spotting opportunities, seizing momentum, and making things happen.'],
+  ['ESFP', 'The Entertainer', 'Spontaneous, energetic, and enthusiastic people – life is never boring.', '#EA580C', '/profiles/esfp.svg',
+    "Entertainers love vibrant social interaction and the spotlight. Generous with their warmth and excitement, they lift up every room they enter and remind everyone to celebrate life's moments."]
+].map(a => [a[0], P(...a)]))
+export const reportSections = [{ id: 'traits', title: 'Personality Traits', on: true }, { id: 'career', title: 'Your Career Path', on: true }, { id: 'growth', title: 'Your Personal Growth', on: true }, { id: 'relationships', title: 'Your Relationships', on: true }, { id: 'team', title: 'Your Team Style', on: true }]
