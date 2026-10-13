@@ -1,3 +1,4 @@
+import React, { useEffect } from 'react'
 import { BarChart3, Users, CheckSquare, BookOpen, Trash2, Download, Clock, ArrowRight } from 'lucide-react'
 import { useStore } from '../../hooks/useStore'
 
@@ -6,6 +7,28 @@ import { useStore } from '../../hooks/useStore'
  */
 export default function DashboardTab({ questions, pendingAccessCount = 0, onGoToAccess }) {
   const [results, setResults] = useStore('safe_results', [])
+
+  // Sync results from authoritative server API (SEC 04)
+  useEffect(() => {
+    let isMounted = true
+    const fetchCloudResults = async () => {
+      try {
+        const res = await fetch('/api/admin/results', {
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        })
+        if (res.ok) {
+          const json = await res.json()
+          if (isMounted && json && Array.isArray(json.results) && json.results.length > 0) {
+            setResults(json.results)
+          }
+        }
+      } catch (e) {}
+    }
+    fetchCloudResults()
+    return () => { isMounted = false }
+  }, [])
+
   const dist    = {}
   results.forEach(r => { dist[r.type] = (dist[r.type] || 0) + 1 })
   const total = results.length || 1

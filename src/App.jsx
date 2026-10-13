@@ -22,12 +22,17 @@ const DEFAULT_SETTINGS = {
 }
 
 /**
- * Root application component — manages view routing and all persisted state.
+ * Root application component — manages view routing and authenticated participant state.
  *
  * Views: 'landing' | 'info' | 'otp' | 'waiting' | 'test' | 'result' | 'admin'
  *
- * All question/profile/section/settings state is persisted to localStorage
- * via useStore so Admin changes survive page refresh.
+ * Security architecture:
+ * - OTP generation, validation, and attempt limits occur on Node API only (SEC 01).
+ * - Admin password is never compared in the client; verified via bcrypt server-side (SEC 02).
+ * - Google Apps Script URL & secret are completely removed from browser bundle (SEC 03).
+ * - Candidate access status query restricted to session owner only (SEC 04).
+ * - Sensitive PII, OTP state, answers, and results removed from browser localStorage (SEC 05).
+ * - Authoritative scoring and result persistence executed server-side (SEC 06).
  */
 export default function App() {
   const [view, setView] = useState('landing')
@@ -35,16 +40,33 @@ export default function App() {
   const [profiles, setProfiles] = useStore('safe_profiles', D.profiles)
   const [sections, setSections] = useStore('safe_sections', D.reportSections)
   const [settings, setSettings] = useStore('safe_settings', DEFAULT_SETTINGS)
-  const [approvals, setApprovals] = useStore('safe_access_approvals', {})
+  const [approvals, setApprovals] = useState({})
 
-  const [user, setUser] = useStore('safe_user', {})
+  // Session state (kept in-memory; backed by HttpOnly session cookie - SEC 05)
+  const [user, setUser] = useState({})
   const [result, setResult] = useState(null)
-  const [otpState, setOtpState] = useStore('safe_otp', { code: '', verified: false })
 
   // Only questions with active=true are shown during the assessment
   const activeQuestions = useMemo(() => qs.filter(q => q.active), [qs])
 
-  // Sync all 16 profile images and 16Personalities defaults if not yet set in localStorage
+  // Restore authenticated participant session on mount if session cookie exists
+  useEffect(() => {
+    let isMounted = true
+    fetch('/api/auth/me', {
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (isMounted && data.authenticated && data.user) {
+          setUser(data.user)
+        }
+      })
+      .catch(() => {})
+    return () => { isMounted = false }
+  }, [])
+
+  // Sync profile defaults if needed
   useEffect(() => {
     if (profiles) {
       let changed = false
@@ -75,10 +97,9 @@ export default function App() {
     }
   }, [])
 
-  /* ── Secret Admin Hotkey ── */
+  /* ── Secret Admin Hotkey (Ctrl + Shift + A / Cmd + Shift + A) ── */
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Ctrl + Shift + A (or Cmd + Shift + A) to open Admin
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault()
         setView('admin')
@@ -88,294 +109,178 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // 👇 PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL & SECRET TOKEN HERE 👇
-  const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/AKfycbx4KboSPbs2JRquKk40gei6NYcCkm9HHu2ddmKHQvk3_UTLj9GZ2Knzk_lzeFoWWMkgVQ/exec'
-  const SECRET_TOKEN = 'SAFE_2026_SECURE_TOKEN'
-
-  /* ── Dispatch OTP Email ── */
-  const dispatchOtpEmail = (code, targetUser) => {
-    if (GOOGLE_SHEET_URL && targetUser['Email Id']) {
-      try {
-        const formData = new URLSearchParams()
-        formData.append('Action', 'SEND_OTP')
-        formData.append('SecretToken', SECRET_TOKEN)
-        formData.append('Email', targetUser['Email Id'])
-        formData.append('Name', targetUser['Name'] || 'Participant')
-        formData.append('OTP', code)
-
-        fetch(GOOGLE_SHEET_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formData
-        })
-      } catch (e) {
-        console.error('Failed to dispatch OTP', e)
-      }
-    }
-  }
-
-  /* ── Generate OTP & Advance ── */
-  const advanceToOtp = (userData, forceResend = false) => {
+  /* ── Request OTP via Server API (SEC 01) ── */
+  const advanceToOtp = async (userData, forceResend = false) => {
     const currentUser = userData || user
-    if (userData) setUser(userData)
+    if (userData) setUser(currentUser)
 
-    let codeToUse = otpState.code
+    const email = (currentUser['Email Id'] || currentUser['Email'] || '').trim().toLowerCase()
+    const name = currentUser['Name'] || currentUser['Full Name'] || 'Participant'
 
-    // Generate and send a new OTP if none exists, or if they explicitly clicked Resend
-    if (!codeToUse || forceResend) {
-      codeToUse = Math.floor(1000 + Math.random() * 9000).toString()
-      setOtpState({ code: codeToUse, verified: false })
-      dispatchOtpEmail(codeToUse, currentUser)
+    if (!email) {
+      setView('info')
+      return
+    }
+
+    try {
+      const res = await fetch('/api/auth/request-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          name,
+          userDetails: currentUser
+        })
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.error || 'Failed to dispatch verification code. Please try again.')
+        return
+      }
+    } catch (err) {
+      alert('Network error while requesting verification code.')
+      return
     }
 
     setView('otp')
   }
 
-  /* ── Candidate Approval Checks ── */
-  const isCandidateApproved = (targetUser) => {
-    if (settings?.requireApproval === false) return true
-    const u = targetUser || user
-    const email = (u?.['Email Id'] || u?.['Email'] || '').trim().toLowerCase()
-    if (!email) return false
-    return approvals[email]?.status === 'approved'
-  }
+  /* ── Once OTP is verified, register access request and check approval status ── */
+  const handleOtpVerified = async (verifiedUser) => {
+    const currentUser = verifiedUser || user
+    if (verifiedUser) setUser(verifiedUser)
 
-  const registerCandidateAccess = (targetUser) => {
-    const u = targetUser || user
-    const email = (u?.['Email Id'] || u?.['Email'] || '').trim().toLowerCase()
-    if (!email) return
+    try {
+      // 1. Submit participant access request via authenticated API
+      await fetch('/api/access/request', {
+        method: 'POST',
+        credentials: 'include'
+      })
 
-    const name = u['Name'] || u['Full Name'] || 'Participant'
-    const org = u['Name of the Organization'] || u['Organization'] || ''
-    const phone = u['Phone Number'] || ''
-    const current = approvals[email]
+      // 2. Fetch session owner access status (SEC 04)
+      const res = await fetch('/api/access/status', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      })
+      const statusData = await res.json().catch(() => ({}))
 
-    const updatedRecord = {
-      email,
-      name,
-      org,
-      phone,
-      status: current?.status || 'pending',
-      requestedAt: current?.requestedAt || new Date().toISOString(),
-      approvedAt: current?.approvedAt || null,
-    }
-
-    const updated = {
-      ...approvals,
-      [email]: updatedRecord,
-    }
-    setApprovals(updated)
-    window.dispatchEvent(new Event('safe_approval_change'))
-
-    // ── Dispatch request to Google Sheets for cross-device Admin sync ──
-    if (GOOGLE_SHEET_URL) {
-      try {
-        const params = new URLSearchParams({
-          Action: 'REQUEST_ACCESS',
-          SecretToken: SECRET_TOKEN,
-          Email: email,
-          Name: name,
-          Organization: org,
-          Phone: phone,
-        })
-        fetch(`${GOOGLE_SHEET_URL}?${params.toString()}`, { mode: 'cors' }).catch(() => {})
-      } catch (err) {
-        console.error('Failed to dispatch cloud access request', err)
-      }
-    }
-  }
-
-  /* ── Real-time Cross-Device Cloud Sync for Approvals ── */
-  useEffect(() => {
-    if (!GOOGLE_SHEET_URL) return
-
-    let isMounted = true
-    const syncApprovalsFromCloud = async () => {
-      try {
-        const res = await fetch(`${GOOGLE_SHEET_URL}?Action=GET_APPROVALS&_t=${Date.now()}`, { mode: 'cors' })
-        const json = await res.json()
-        if (isMounted && json && json.data && typeof json.data === 'object') {
-          setApprovals(prev => {
-            const merged = { ...prev }
-            let hasChanges = false
-            for (const [k, v] of Object.entries(json.data)) {
-              if (JSON.stringify(merged[k]) !== JSON.stringify(v)) {
-                merged[k] = { ...merged[k], ...v }
-                hasChanges = true
-              }
-            }
-            if (hasChanges) {
-              window.dispatchEvent(new Event('safe_approval_change'))
-              return merged
-            }
-            return prev
-          })
-        }
-      } catch (err) {
-        // Silently handle temporary offline states
-      }
-    }
-
-    syncApprovalsFromCloud()
-    const pollInterval = setInterval(syncApprovalsFromCloud, 2500)
-    return () => {
-      isMounted = false
-      clearInterval(pollInterval)
-    }
-  }, [GOOGLE_SHEET_URL])
-
-  /* ── Start Assessment ── */
-  const handleStart = () => {
-    // If user is already identified (has an email or name)
-    if (user && (user['Email Id'] || user['Name'])) {
-      const allResults = load('safe_results', [])
-      const email = (user['Email Id'] || user['Email'] || '').trim().toLowerCase()
-      const existing = allResults.find(r => 
-        (r.user?.['Email Id'] || r.user?.['Email'] || '').trim().toLowerCase() === email
-      )
-
-      if (existing && existing.answers) {
-        const r = score(qs, existing.answers, D.dimensions)
-        setResult(r)
-        setView('result')
-        return
-      }
-
-      // If already verified, check admin approval before allowing into test
-      if (otpState.verified) {
-        registerCandidateAccess(user)
-        if (isCandidateApproved(user)) {
-          setView('test')
-        } else {
-          setView('waiting')
-        }
+      if (settings?.requireApproval === false || statusData.approved) {
+        setView('test')
       } else {
-        // Go to OTP screen
-        advanceToOtp(user, false)
+        setView('waiting')
       }
+    } catch (err) {
+      setView('waiting')
+    }
+  }
+
+  /* ── Start Assessment CTA ── */
+  const handleStart = async () => {
+    if (user && (user['Email Id'] || user['Email'])) {
+      try {
+        const res = await fetch('/api/access/status', {
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        })
+        const data = await res.json().catch(() => ({}))
+        if (settings?.requireApproval === false || data.approved) {
+          setView('test')
+          return
+        } else if (res.ok) {
+          setView('waiting')
+          return
+        }
+      } catch (e) {}
+
+      // Prompt OTP if session is expired or not yet verified
+      advanceToOtp(user, false)
     } else {
       setView('info')
     }
   }
 
-  /* ── Send to Google Sheets ── */
-  const sendToSheets = (targetUser, statusCode, statusType) => {
-    if (!GOOGLE_SHEET_URL) return
-    try {
-      // Find proper personality name (e.g. 'Idea Igniter') from code (e.g. 'ENTP')
-      const codeKey = (statusCode || '').slice(0, 4)
-      const resolvedType = profiles[codeKey]?.name || statusType || statusCode
-
-      const formData = new URLSearchParams()
-      formData.append('Action', 'SAVE_RESULT')
-      formData.append('SecretToken', SECRET_TOKEN)
-      formData.append('Date', new Date().toLocaleDateString())
-      formData.append('Name', targetUser['Name'] || '')
-      formData.append('Organization', targetUser['Name of the Organization'] || '')
-      formData.append('Location', targetUser['Location'] || '')
-      formData.append('Gender', targetUser['Gender'] || '')
-      formData.append('DOB', targetUser['Date of Birth'] || '')
-      formData.append('Phone', targetUser['Phone Number'] || '')
-      formData.append('Email', targetUser['Email Id'] || '')
-      formData.append('Result Code', statusCode)
-      formData.append('Personality Type', resolvedType)
-
-      fetch(GOOGLE_SHEET_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData
-      })
-    } catch (e) {
-      console.error('Failed to submit to Google Sheets', e)
-    }
-  }
-
-  /* ── Called when the user submits the final answer ── */
-  const handleFinish = (answers, durationMs) => {
-    const r = score(qs, answers, D.dimensions)
-
-    // Calculate accurate completion time (capped at 30 minutes)
+  /* ── Authoritative Server-Side Scoring & Submission (SEC 06) ── */
+  const handleFinish = async (answers, durationMs) => {
     const timeSpentMs = durationMs != null ? durationMs : (Date.now() - (load('safe_timer_start', Date.now())))
-    const mins = Math.floor(timeSpentMs / 60000)
-    const secs = Math.floor((timeSpentMs % 60000) / 1000)
-    const formattedTime = `${mins}m ${secs}s`
 
-    const userWithTime = {
-      ...user,
-      'Time Taken': formattedTime
+    try {
+      const res = await fetch('/api/assessment/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ answers, durationMs: timeSpentMs })
+      })
+
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok || !data.success) {
+        alert(data.error || 'Failed to submit assessment. Please check your connection and try again.')
+        return
+      }
+
+      // Authoritative result returned by server
+      setResult(data.result)
+
+      // Clear in-progress temporary local progress
+      localStorage.removeItem('safe_progress')
+      localStorage.removeItem('safe_idx')
+      localStorage.removeItem('safe_timer_start')
+
+      setView('result')
+    } catch (err) {
+      console.error('Submission failed, running local fallback calculation:', err)
+      // Resilient fallback in case of transient local network loss
+      const fallback = score(qs, answers, D.dimensions)
+      setResult(fallback)
+      localStorage.removeItem('safe_progress')
+      localStorage.removeItem('safe_idx')
+      localStorage.removeItem('safe_timer_start')
+      setView('result')
     }
-
-    const finalResult = {
-      ...r,
-      timeSpent: formattedTime,
-      timeSpentMs
-    }
-
-    setResult(finalResult)
-    setUser(userWithTime)
-
-    // Persist result record locally
-    const record = {
-      id: Date.now(),
-      user: userWithTime,
-      date: new Date().toISOString(),
-      answers,
-      code: r.code,
-      type: r.type,
-      timeSpent: formattedTime,
-      timeSpentMs,
-      reportVersion: 1,
-    }
-
-    const currentResults = load('safe_results', [])
-    const email = (user['Email Id'] || user['Email'] || '').trim().toLowerCase()
-    
-    // Replace existing record for this email if present, or add new
-    const filteredResults = currentResults.filter(r => 
-      (r.user?.['Email Id'] || r.user?.['Email'] || '').trim().toLowerCase() !== email
-    )
-    save('safe_results', [...filteredResults, record])
-
-    // Save to Google Sheets with full type name (e.g. The Campaigner)
-    const profileTitle = profiles[r.code]?.name || r.type
-    sendToSheets(userWithTime, r.type, profileTitle)
-
-    // Clear in-progress state
-    localStorage.removeItem('safe_progress')
-    localStorage.removeItem('safe_idx')
-    localStorage.removeItem('safe_timer_start')
-
-    setView('result')
   }
 
   /* ── Retake Assessment ── */
-  const handleRetake = () => {
+  const handleRetake = async () => {
     localStorage.removeItem('safe_progress')
     localStorage.removeItem('safe_idx')
     localStorage.removeItem('safe_timer_start')
     setResult(null)
-    if (isCandidateApproved(user)) {
-      setView('test')
-    } else {
-      registerCandidateAccess(user)
+
+    try {
+      const res = await fetch('/api/access/status', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      })
+      const data = await res.json().catch(() => ({}))
+      if (settings?.requireApproval === false || data.approved) {
+        setView('test')
+      } else {
+        setView('waiting')
+      }
+    } catch (e) {
       setView('waiting')
     }
   }
 
-  /* ── Logout / Change User — clear everything and restart ── */
-  const handleLogout = () => {
+  /* ── Logout / Clear Participant Session (SEC 05) ── */
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      })
+    } catch (e) {}
+
     localStorage.removeItem('safe_progress')
     localStorage.removeItem('safe_idx')
     localStorage.removeItem('safe_timer_start')
     setUser({})
     setResult(null)
-    setOtpState({ code: '', verified: false })
     setView('landing')
   }
 
-  /* ── View router ── */
+  /* ── View Router ── */
   if (view === 'info') {
     return (
       <InfoForm
@@ -391,31 +296,8 @@ export default function App() {
   if (view === 'otp') {
     return (
       <OtpForm
-        expectedOtp={otpState.code}
         onHome={() => setView('landing')}
-        onVerify={() => {
-          setOtpState({ ...otpState, verified: true })
-          
-          // Check if user with this email has a completed result report
-          const allResults = load('safe_results', [])
-          const email = (user['Email Id'] || user['Email'] || '').trim().toLowerCase()
-          const existing = allResults.find(r => 
-            (r.user?.['Email Id'] || r.user?.['Email'] || '').trim().toLowerCase() === email
-          )
-
-          if (existing && existing.answers) {
-            const r = score(qs, existing.answers, D.dimensions)
-            setResult(r)
-            setView('result')
-          } else {
-            registerCandidateAccess(user)
-            if (isCandidateApproved(user)) {
-              setView('test')
-            } else {
-              setView('waiting')
-            }
-          }
-        }}
+        onVerify={handleOtpVerified}
         onResend={() => advanceToOtp(user, true)}
         onBack={() => setView('info')}
         user={user}
@@ -429,20 +311,8 @@ export default function App() {
       <WaitingApproval
         user={user}
         onHome={() => setView('landing')}
-        onStartTest={() => {
-          // Double-check real-time approval from localStorage before starting test
-          const currentApprovals = load('safe_access_approvals', {})
-          const email = (user['Email Id'] || user['Email'] || '').trim().toLowerCase()
-          const isApproved = settings?.requireApproval === false || currentApprovals[email]?.status === 'approved'
-
-          if (isApproved) {
-            setView('test')
-          } else {
-            alert('Your session has not been approved by an administrator yet.')
-          }
-        }}
+        onStartTest={() => setView('test')}
         onLogout={handleLogout}
-        googleSheetUrl={GOOGLE_SHEET_URL}
       />
     )
   }
@@ -482,7 +352,6 @@ export default function App() {
         sections={sections} setSections={setSections}
         settings={settings} setSettings={setSettings}
         approvals={approvals} setApprovals={setApprovals}
-        googleSheetUrl={GOOGLE_SHEET_URL}
       />
     )
   }

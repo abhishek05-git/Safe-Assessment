@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { X, Lock } from 'lucide-react'
 import Shell         from '../layout/Shell'
 import Button        from '../ui/Button'
@@ -9,11 +9,8 @@ import ProfilesTab   from '../admin/ProfilesTab'
 import ReportTab     from '../admin/ReportTab'
 import SettingsTab   from '../admin/SettingsTab'
 
-// The hardcoded password for now
-const ADMIN_PASSWORD = 'admin'
-
 /**
- * Admin panel shell — tab bar + routed content.
+ * Admin panel shell — authenticated via HttpOnly admin session cookie (SEC 02)
  */
 export default function Admin({
   onExit,
@@ -22,22 +19,80 @@ export default function Admin({
   sections,    setSections,
   settings,    setSettings,
   approvals,   setApprovals,
-  googleSheetUrl,
 }) {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loadingCheck, setLoadingCheck] = useState(true)
   const [password, setPassword] = useState('')
-  const [error, setError] = useState(false)
+  const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleLogin = (e) => {
-    e.preventDefault()
-    const validPassword = settings?.adminPassword || 'admin'
-    if (password === validPassword) {
-      setIsAuthenticated(true)
-      setError(false)
-    } else {
-      setError(true)
+  // Verify existing admin session on mount
+  useEffect(() => {
+    let isMounted = true
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/admin/check', {
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        })
+        if (res.ok) {
+          const json = await res.json()
+          if (isMounted && json && json.authenticated) {
+            setIsAuthenticated(true)
+          }
+        }
+      } catch (e) {}
+      if (isMounted) setLoadingCheck(false)
     }
+    checkSession()
+    return () => { isMounted = false }
+  }, [])
+
+  const handleLogin = async (e) => {
+    e.preventDefault()
+    setError('')
+    setIsSubmitting(true)
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.success) {
+        setIsAuthenticated(true)
+        setPassword('')
+      } else {
+        setError(data.error || 'Authentication failed. Please try again.')
+      }
+    } catch (err) {
+      setError('Unable to reach authentication server.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/admin/logout', {
+        method: 'POST',
+        credentials: 'include'
+      })
+    } catch (e) {}
+    setIsAuthenticated(false)
+    onExit()
+  }
+
+  if (loadingCheck) {
+    return (
+      <Shell onHome={onExit}>
+        <div className="max-w-md mx-auto pt-20 text-center text-slate-400">
+          Checking administrator authorization...
+        </div>
+      </Shell>
+    )
   }
 
   if (!isAuthenticated) {
@@ -76,15 +131,16 @@ export default function Admin({
                   }`}
                   autoFocus
                 />
-                {error && <p className="text-red-500 text-xs mt-1.5 text-left">Incorrect password. Please try again.</p>}
+                {error && <p className="text-red-500 text-xs mt-1.5 text-left">{error}</p>}
               </div>
               <Button
                 type="submit"
                 variant="primary"
                 size="md"
+                disabled={isSubmitting}
                 className="w-full justify-center"
               >
-                Login
+                {isSubmitting ? 'Authenticating...' : 'Login'}
               </Button>
             </form>
           </div>
@@ -131,7 +187,7 @@ export default function Admin({
             variant="secondary"
             size="sm"
             icon={<X className="w-4 h-4" />}
-            onClick={onExit}
+            onClick={handleLogout}
           >
             Exit Admin
           </Button>
@@ -176,7 +232,6 @@ export default function Admin({
             <AccessTab
               approvals={approvals}
               setApprovals={setApprovals}
-              googleSheetUrl={googleSheetUrl}
             />
           )}
           {activeTab === 'questions' && (

@@ -63,20 +63,21 @@ export default function SettingsTab({ settings, setSettings }) {
         </label>
       </div>
 
-      {/* Security Settings */}
+      {/* Security Information */}
       <div className="pt-6 border-t border-slate-200 mt-6 space-y-3">
-        <h4 className="font-heading font-bold text-slate-700 text-sm">🔒 Security Settings</h4>
-        <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">Admin Password</label>
-          <input
-            type="password"
-            value={settings.adminPassword || 'admin'}
-            onChange={e => setSettings({ ...settings, adminPassword: e.target.value })}
-            className="w-full border-2 border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-sky bg-white"
-            placeholder="Set Admin Password"
-          />
-          <p className="text-[11px] text-slate-400 mt-1">
-            This password is required when accessing the Admin Panel via Ctrl+Shift+A.
+        <h4 className="font-heading font-bold text-slate-700 text-sm">🔒 Administrator Authentication</h4>
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 space-y-2">
+          <p className="font-medium text-slate-800">
+            Admin access is secured server-side using bcrypt hashing (SEC 02).
+          </p>
+          <p className="leading-relaxed">
+            To update the administrator password, generate a new hash using:
+          </p>
+          <code className="block bg-slate-900 text-emerald-400 p-2.5 rounded-lg font-mono text-[11px]">
+            npm run hash-password "YourNewStrongPassword"
+          </code>
+          <p className="text-slate-500 text-[11px]">
+            Then set the resulting hash in your server's <span className="font-mono text-slate-700">.env</span> file as <span className="font-mono text-slate-700">ADMIN_PASSWORD_HASH</span> and restart the Node service.
           </p>
         </div>
       </div>

@@ -1,12 +1,20 @@
 import React, { useState, useEffect } from 'react'
-import { ArrowRight, ShieldCheck, RefreshCw } from 'lucide-react'
-import Shell  from '../layout/Shell'
+import { ArrowRight, ShieldCheck, RefreshCw, Loader2 } from 'lucide-react'
+import Shell from '../layout/Shell'
 import Button from '../ui/Button'
 
-export default function OtpForm({ onHome, onVerify, expectedOtp, onResend, onBack, user, onLogout }) {
+/**
+ * OtpForm:
+ * Verifies the 6-digit verification code with the server (SEC 01).
+ * Relies on HttpOnly session cookie issued by the API.
+ */
+export default function OtpForm({ onHome, onVerify, onResend, onBack, user, onLogout }) {
   const [otp, setOtp] = useState('')
-  const [error, setError] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(30)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [timeLeft, setTimeLeft] = useState(45)
+
+  const email = (user?.['Email Id'] || user?.['Email'] || '').trim().toLowerCase()
 
   useEffect(() => {
     if (timeLeft <= 0) return
@@ -14,21 +22,42 @@ export default function OtpForm({ onHome, onVerify, expectedOtp, onResend, onBac
     return () => clearInterval(timer)
   }, [timeLeft])
 
-  const handleVerify = () => {
-    if (otp === expectedOtp) {
-      setError(false)
-      onVerify()
-    } else {
-      setError(true)
+  const handleVerify = async () => {
+    if (!otp || otp.length < 6) {
+      setErrorMessage('Please enter the 6-digit verification code.')
+      return
+    }
+
+    setLoading(true)
+    setErrorMessage('')
+
+    try {
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.verified) {
+        onVerify(data.user || user)
+      } else {
+        setErrorMessage(data.error || 'Invalid verification code. Please check and try again.')
+      }
+    } catch (err) {
+      setErrorMessage('Network connection error. Please try again.')
+    } finally {
+      setLoading(false)
     }
   }
 
   const handleResend = () => {
-    if (timeLeft > 0) return
-    onResend()
-    setTimeLeft(30)
+    if (timeLeft > 0 || loading) return
+    setErrorMessage('')
     setOtp('')
-    setError(false)
+    setTimeLeft(45)
+    onResend()
   }
 
   return (
@@ -38,29 +67,37 @@ export default function OtpForm({ onHome, onVerify, expectedOtp, onResend, onBac
           <div className="w-16 h-16 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <ShieldCheck className="w-8 h-8 text-emerald-500" />
           </div>
-          
+
           <h2 className="font-heading font-bold text-2xl text-navy leading-tight mb-2">
             Verification Required
           </h2>
           <p className="text-slate-500 text-sm mb-8">
-            We have emailed a 4-digit OTP to your registered email address. Please enter it below to begin the assessment.
+            We have emailed a 6-digit verification code to <strong>{email || 'your email'}</strong>. Please enter it below to begin.
           </p>
 
           <div className="mb-6">
             <input
               type="text"
-              maxLength={4}
+              maxLength={6}
               value={otp}
-              onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
-              className={`w-full text-center tracking-[1em] font-heading font-bold text-3xl border-2 rounded-xl px-4 py-4 focus:outline-none transition-colors bg-white ${
-                error ? 'border-red-400 focus:border-red-500 text-red-500' : 'border-slate-200 focus:border-emerald-500 text-slate-800'
+              onChange={e => {
+                setOtp(e.target.value.replace(/\D/g, ''))
+                if (errorMessage) setErrorMessage('')
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleVerify()
+              }}
+              className={`w-full text-center tracking-[0.5em] font-heading font-bold text-2xl sm:text-3xl border-2 rounded-xl px-4 py-4 focus:outline-none transition-colors bg-white ${
+                errorMessage
+                  ? 'border-red-400 focus:border-red-500 text-red-500'
+                  : 'border-slate-200 focus:border-emerald-500 text-slate-800'
               }`}
-              placeholder="••••"
+              placeholder="••••••"
               autoFocus
             />
-            {error && (
-              <p className="text-red-500 text-sm mt-3 font-semibold">
-                Invalid OTP. Please try again.
+            {errorMessage && (
+              <p className="text-red-500 text-xs sm:text-sm mt-3 font-semibold text-left">
+                {errorMessage}
               </p>
             )}
           </div>
@@ -70,25 +107,30 @@ export default function OtpForm({ onHome, onVerify, expectedOtp, onResend, onBac
             size="md"
             className="w-full justify-center text-base mb-4"
             onClick={handleVerify}
-            iconRight={<ArrowRight className="w-5 h-5" />}
+            disabled={loading || otp.length < 6}
+            iconRight={loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
           >
-            Verify & Start
+            {loading ? 'Verifying...' : 'Verify & Continue'}
           </Button>
 
           <div className="flex flex-col gap-2">
             <button
               onClick={handleResend}
-              disabled={timeLeft > 0}
+              disabled={timeLeft > 0 || loading}
               className={`text-sm font-semibold flex items-center justify-center gap-1.5 w-full py-2 transition-colors ${
-                timeLeft > 0 ? 'text-slate-400 cursor-not-allowed' : 'text-sky hover:text-sky-600'
+                timeLeft > 0 || loading ? 'text-slate-400 cursor-not-allowed' : 'text-sky hover:text-sky-600'
               }`}
             >
-              <RefreshCw className={`w-4 h-4 ${timeLeft > 0 ? '' : 'animate-spin-slow'}`} style={{ animationDuration: '3s' }} />
-              {timeLeft > 0 ? `Resend OTP in ${timeLeft}s` : 'Resend OTP'}
+              <RefreshCw
+                className={`w-4 h-4 ${timeLeft > 0 ? '' : 'animate-spin-slow'}`}
+                style={{ animationDuration: '3s' }}
+              />
+              {timeLeft > 0 ? `Resend code in ${timeLeft}s` : 'Resend Code'}
             </button>
 
             <button
               onClick={onBack}
+              disabled={loading}
               className="text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors py-2"
             >
               Wait, I need to edit my details

@@ -137,7 +137,7 @@ function doPost(e) {
  * AccessTab:
  * Admin interface to approve or revoke candidate access to the assessment.
  */
-export default function AccessTab({ approvals = {}, setApprovals, googleSheetUrl }) {
+export default function AccessTab({ approvals = {}, setApprovals }) {
   const [filter, setFilter] = useState('all') // 'all' | 'pending' | 'approved'
   const [search, setSearch] = useState('')
   const [isSyncing, setIsSyncing] = useState(false)
@@ -170,95 +170,101 @@ export default function AccessTab({ approvals = {}, setApprovals, googleSheetUrl
   })
 
   const notifyChange = (newApprovals) => {
-    setApprovals(newApprovals)
-    // Dispatch local event for same-tab reactivity
+    if (setApprovals) setApprovals(newApprovals)
     window.dispatchEvent(new Event('safe_approval_change'))
   }
 
+  // Load approvals from Node API (SEC 04 - Admin authorized only)
   const handleSyncCloud = async () => {
-    if (!googleSheetUrl) return
     setIsSyncing(true)
     try {
-      const res = await fetch(`${googleSheetUrl}?Action=GET_APPROVALS&_t=${Date.now()}`, { mode: 'cors' })
-      const json = await res.json()
-      if (json && json.data && typeof json.data === 'object') {
-        const merged = { ...approvals }
-        for (const [k, v] of Object.entries(json.data)) {
-          merged[k] = { ...merged[k], ...v }
+      const res = await fetch('/api/admin/approvals', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      })
+      if (res.ok) {
+        const json = await res.json()
+        if (json && json.approvals && typeof json.approvals === 'object') {
+          notifyChange(json.approvals)
         }
-        notifyChange(merged)
       }
     } catch (e) {
-      console.error('Failed to sync with Google Sheets', e)
+      console.error('Failed to sync approvals from server API', e)
     } finally {
-      setTimeout(() => setIsSyncing(false), 500)
+      setTimeout(() => setIsSyncing(false), 400)
     }
   }
 
-  const handleApprove = (emailKey) => {
-    const cur = approvals[emailKey]
-    if (!cur) return
-    const updated = {
-      ...approvals,
-      [emailKey]: {
-        ...cur,
-        status: 'approved',
-        approvedAt: new Date().toISOString()
-      }
-    }
-    notifyChange(updated)
+  // Fetch approvals on component mount
+  React.useEffect(() => {
+    handleSyncCloud()
+  }, [])
 
-    // Sync approval to Google Sheets so candidate on other device unlocks
-    if (googleSheetUrl && emailKey) {
-      fetch(`${googleSheetUrl}?Action=SET_APPROVAL&Email=${encodeURIComponent(emailKey)}&Status=approved`, { mode: 'cors' }).catch(() => {})
+  const handleApprove = async (emailKey) => {
+    try {
+      const res = await fetch(`/api/admin/approvals/${encodeURIComponent(emailKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status: 'approved' })
+      })
+      if (res.ok) {
+        const cur = approvals[emailKey] || { email: emailKey }
+        const updated = {
+          ...approvals,
+          [emailKey]: {
+            ...cur,
+            status: 'approved',
+            approvedAt: new Date().toISOString()
+          }
+        }
+        notifyChange(updated)
+      }
+    } catch (e) {
+      console.error('Failed to approve candidate', e)
     }
   }
 
-  const handleRevoke = (emailKey) => {
-    const cur = approvals[emailKey]
-    if (!cur) return
-    const updated = {
-      ...approvals,
-      [emailKey]: {
-        ...cur,
-        status: 'pending',
-        approvedAt: null
+  const handleRevoke = async (emailKey) => {
+    try {
+      const res = await fetch(`/api/admin/approvals/${encodeURIComponent(emailKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status: 'pending' })
+      })
+      if (res.ok) {
+        const cur = approvals[emailKey] || { email: emailKey }
+        const updated = {
+          ...approvals,
+          [emailKey]: {
+            ...cur,
+            status: 'pending',
+            approvedAt: null
+          }
+        }
+        notifyChange(updated)
       }
-    }
-    notifyChange(updated)
-
-    // Sync revocation to Google Sheets
-    if (googleSheetUrl && emailKey) {
-      fetch(`${googleSheetUrl}?Action=SET_APPROVAL&Email=${encodeURIComponent(emailKey)}&Status=pending`, { mode: 'cors' }).catch(() => {})
+    } catch (e) {
+      console.error('Failed to revoke candidate access', e)
     }
   }
 
   const handleDelete = (emailKey) => {
-    if (window.confirm(`Remove access request for ${approvals[emailKey]?.name || emailKey}?`)) {
+    if (window.confirm(`Remove access request record for ${approvals[emailKey]?.name || emailKey}?`)) {
       const copy = { ...approvals }
       delete copy[emailKey]
       notifyChange(copy)
     }
   }
 
-  const handleApproveAllPending = () => {
+  const handleApproveAllPending = async () => {
     if (pendingCount === 0) return
-    if (window.confirm(`Approve all ${pendingCount} pending candidate(s) now?`)) {
-      const now = new Date().toISOString()
-      const updated = { ...approvals }
-      Object.keys(updated).forEach(k => {
-        if (updated[k].status !== 'approved') {
-          updated[k] = {
-            ...updated[k],
-            status: 'approved',
-            approvedAt: now
-          }
-          if (googleSheetUrl) {
-            fetch(`${googleSheetUrl}?Action=SET_APPROVAL&Email=${encodeURIComponent(k)}&Status=approved`, { mode: 'cors' }).catch(() => {})
-          }
-        }
-      })
-      notifyChange(updated)
+    if (!window.confirm(`Approve all ${pendingCount} pending candidate(s) now?`)) return
+
+    const pendingItems = filteredList.filter(item => item.status !== 'approved' && item.email)
+    for (const item of pendingItems) {
+      await handleApprove(item.email.toLowerCase())
     }
   }
 
@@ -340,17 +346,15 @@ export default function AccessTab({ approvals = {}, setApprovals, googleSheetUrl
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {googleSheetUrl && (
-            <button
-              onClick={handleSyncCloud}
-              disabled={isSyncing}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-xl text-xs font-bold border border-sky-200 transition-all cursor-pointer disabled:opacity-50"
-              title="Pull latest requests directly from Google Sheets"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Syncing...' : 'Sync Cloud'}
-            </button>
-          )}
+          <button
+            onClick={handleSyncCloud}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-xl text-xs font-bold border border-sky-200 transition-all cursor-pointer disabled:opacity-50"
+            title="Pull latest requests from server"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-sky-600 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Refreshing...' : 'Refresh Approvals'}
+          </button>
 
           <button
             onClick={() => setShowSetupGuide(!showSetupGuide)}
