@@ -10,7 +10,7 @@ const B = { weight: 1, required: true, active: true }
 export const questions = [
   {
     "id": "Q001",
-    "question": "I prefer working in a lively, active environment because i thrive on energy and interaction.",
+    "question": "I prefer working in a lively, active environment because I thrive on energy and interaction.",
     "category": "Energy",
     "type": "scale5",
     "weight": 1,
@@ -90,7 +90,7 @@ export const questions = [
   },
   {
     "id": "Q006",
-    "question": "At meetings, I prefer to listen and contribute after thinking.",
+    "question": "In meetings, I prefer to listen and contribute after thinking.",
     "category": "Energy",
     "type": "scale5",
     "weight": 1,
@@ -106,7 +106,7 @@ export const questions = [
   },
   {
     "id": "Q007",
-    "question": "I enjoy leading social activities at work i love taking the lead.",
+    "question": "I enjoy leading social activities at work, and I love taking the lead.",
     "category": "Energy",
     "type": "scale5",
     "weight": 1,
@@ -170,7 +170,7 @@ export const questions = [
   },
   {
     "id": "Q027",
-    "question": "When solving problems, I focus on details and what is immediately in front of you.",
+    "question": "When solving problems, I focus on details and what is immediately in front of me.",
     "category": "Mind",
     "type": "scale5",
     "weight": 1,
@@ -186,7 +186,7 @@ export const questions = [
   },
   {
     "id": "Q028",
-    "question": "I prefer to. Explore new, untested methods.",
+    "question": "I prefer to explore new, untested methods.",
     "category": "Mind",
     "type": "scale5",
     "weight": 1,
@@ -202,7 +202,7 @@ export const questions = [
   },
   {
     "id": "Q029",
-    "question": "In learning new skills, I prefer step-by-step instructions.",
+    "question": "When learning new skills, I prefer step-by-step instructions.",
     "category": "Mind",
     "type": "scale5",
     "weight": 1,
@@ -250,7 +250,7 @@ export const questions = [
   },
   {
     "id": "Q032",
-    "question": "In your day-to-day work, I prefer new challenges and changing situations.",
+    "question": "In my day-to-day work, I prefer new challenges and changing situations.",
     "category": "Mind",
     "type": "scale5",
     "weight": 1,
@@ -442,7 +442,7 @@ export const questions = [
   },
   {
     "id": "Q076",
-    "question": "I prefer your day to be. Flexible and spontaneous.",
+    "question": "I prefer my day to be flexible and spontaneous.",
     "category": "Tactics",
     "type": "scale5",
     "weight": 1,
@@ -458,7 +458,7 @@ export const questions = [
   },
   {
     "id": "Q077",
-    "question": "When completing tasks, I work steadily until completion.",
+    "question": "When working on tasks, I work steadily until they are completed.",
     "category": "Tactics",
     "type": "scale5",
     "weight": 1,
@@ -490,7 +490,7 @@ export const questions = [
   },
   {
     "id": "Q079",
-    "question": "In your work routine, I prefer having a clear schedule and knowing what’s coming next.",
+    "question": "In my work routine, I prefer having a clear schedule and knowing what’s coming next.",
     "category": "Tactics",
     "type": "scale5",
     "weight": 1,
@@ -506,7 +506,7 @@ export const questions = [
   },
   {
     "id": "Q080",
-    "question": "When making decisions, I prefer to keep your options open as long as possible.",
+    "question": "When making decisions, I prefer to keep my options open as long as possible.",
     "category": "Tactics",
     "type": "scale5",
     "weight": 1,
@@ -538,7 +538,7 @@ export const questions = [
   },
   {
     "id": "Q082",
-    "question": "I feel more stressed when you have to commit to decisions too early.",
+    "question": "I feel more stressed when I have to commit to decisions too early.",
     "category": "Tactics",
     "type": "scale5",
     "weight": 1,
@@ -570,7 +570,7 @@ export const questions = [
   },
   {
     "id": "Q084",
-    "question": "In your daily life, I enjoy mixing things up and trying new approaches.",
+    "question": "In my daily life, I enjoy mixing things up and trying new approaches.",
     "category": "Tactics",
     "type": "scale5",
     "weight": 1,

@@ -31,7 +31,7 @@ const DEFAULT_SETTINGS = {
  */
 export default function App() {
   const [view, setView] = useState('landing')
-  const [qs, setQs] = useStore('safe_questions_v10', D.questions)
+  const [qs, setQs] = useStore('safe_questions_v11', D.questions)
   const [profiles, setProfiles] = useStore('safe_profiles', D.profiles)
   const [sections, setSections] = useStore('safe_sections', D.reportSections)
   const [settings, setSettings] = useStore('safe_settings', DEFAULT_SETTINGS)
