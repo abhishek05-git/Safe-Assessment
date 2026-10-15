@@ -20,17 +20,40 @@ All requirements from the security audit (Items 4, 5, 8, 9) are enforced:
 /**
  * SAFE Assessment - Hardened Backend Script
  * 
- * Security Controls:
+ * Security & Reliability Controls:
+ * - Built-in authorizeAndTest() helper for one-click Google OAuth permission authorization.
  * - Rejects all GET requests (doGet disabled).
  * - Requires SecretToken in POST body on every action.
  * - Single candidate status check (GET_APPROVAL_STATUS) prevents PII bulk exposure.
  * - Sanitizes spreadsheet formula injection (=, +, -, @).
+ * - Error-resilient MailApp email dispatch with detailed diagnostics.
  * - Records audit logs for state-changing operations.
  */
 
 // 👇 ROTATE THIS VALUE: Set to a strong random 32+ character secret 👇
 // (Must match GOOGLE_SCRIPT_SHARED_SECRET in Node .env and Vercel environment variables)
 var SHARED_SECRET = "SAFE_2026_SECURE_TOKEN_REPLACE_WITH_STRONG_RANDOM_SECRET";
+
+/**
+ * Run this function ONCE inside the Apps Script editor to authorize Google permissions:
+ * Select 'authorizeAndTest' in the top toolbar dropdown and click 'Run'.
+ */
+function authorizeAndTest() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var userEmail = Session.getActiveUser().getEmail();
+  Logger.log("Active Spreadsheet: " + ss.getName() + " (ID: " + ss.getId() + ")");
+  
+  if (userEmail) {
+    MailApp.sendEmail({
+      to: userEmail,
+      subject: "SAFE Assessment - Apps Script Authorized Successfully",
+      htmlBody: "<h3>Google Apps Script Authorization Confirmed</h3><p>Your Google Apps Script backend has been successfully authorized to access this spreadsheet and send verification emails.</p>"
+    });
+    Logger.log("Test email successfully sent to: " + userEmail);
+  } else {
+    Logger.log("Authorized successfully.");
+  }
+}
 
 /**
  * Escapes formula-leading characters to prevent CSV/Spreadsheet formula injection (CWE-1236)
@@ -45,24 +68,39 @@ function sanitizeCell(val) {
 }
 
 /**
+ * Safely extract parameters from either URL-encoded forms or JSON payload
+ */
+function getParams(e) {
+  var params = {};
+  if (e && e.parameter) {
+    for (var key in e.parameter) {
+      params[key] = e.parameter[key];
+    }
+  }
+  if (e && e.postData && e.postData.contents) {
+    try {
+      var json = JSON.parse(e.postData.contents);
+      for (var jKey in json) {
+        if (params[jKey] === undefined) {
+          params[jKey] = json[jKey];
+        }
+      }
+    } catch (err) {}
+  }
+  return params;
+}
+
+/**
  * Validate that SecretToken in the POST body matches SHARED_SECRET.
  * Never accepts secret in query parameters.
  */
-function validateSecret(e) {
-  var providedToken = '';
-  if (e && e.parameter && e.parameter['SecretToken']) {
-    providedToken = e.parameter['SecretToken'];
-  } else if (e && e.postData && e.postData.contents) {
-    try {
-      var parsed = JSON.parse(e.postData.contents);
-      providedToken = parsed.SecretToken || '';
-    } catch (err) {}
-  }
-  return providedToken && providedToken === SHARED_SECRET;
+function validateSecret(params) {
+  var providedToken = params['SecretToken'] || '';
+  return Boolean(providedToken && providedToken === SHARED_SECRET);
 }
 
 function unauthorizedResponse() {
-  return ContentService.createTextOutput(JSON.stringify({ error: "Unauthorized access" }))
+  return ContentService.createTextOutput(JSON.stringify({ status: "error", error: "Unauthorized access: invalid or missing SecretToken" }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -83,6 +121,7 @@ function writeAuditLog(ss, action, email, details) {
  */
 function doGet(e) {
   return ContentService.createTextOutput(JSON.stringify({
+    status: "error",
     error: "Method Not Allowed. All SAFE Assessment backend actions must use HTTP POST with SecretToken in the request body."
   })).setMimeType(ContentService.MimeType.JSON);
 }
@@ -91,31 +130,26 @@ function doGet(e) {
  * Authoritative POST request handler
  */
 function doPost(e) {
+  var params = getParams(e);
+
   // 1. Strict shared secret validation (P0 Item 1 & 4, P1 Item 5)
-  if (!validateSecret(e)) {
+  if (!validateSecret(params)) {
     return unauthorizedResponse();
   }
 
-  var action = (e.parameter && e.parameter['Action']) || '';
-  if (!action && e.postData && e.postData.contents) {
-    try {
-      var body = JSON.parse(e.postData.contents);
-      action = body.Action || '';
-    } catch (err) {}
-  }
-
+  var action = String(params['Action'] || '').trim();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // ── Action 1: Single Candidate Approval Status (P1 Item 9) ──
   // Takes one email, checks status, returns ONLY that candidate's status without exposing others' PII.
   if (action === 'GET_APPROVAL_STATUS') {
-    var targetEmail = (e.parameter['Email'] || '').trim().toLowerCase();
+    var targetEmail = (params['Email'] || '').trim().toLowerCase();
     var accSheet = ss.getSheetByName('Access_Requests');
     if (!accSheet) {
       return ContentService.createTextOutput(JSON.stringify({
-        status: 'success',
-        email: targetEmail,
+        status: 'none',
         candidateStatus: 'none',
+        email: targetEmail,
         approved: false
       })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -126,44 +160,52 @@ function doPost(e) {
 
     for (var i = 1; i < rows.length; i++) {
       if (String(rows[i][0]).trim().toLowerCase() === targetEmail) {
-        candidateStatus = String(rows[i][4] || 'pending');
-        isApproved = candidateStatus === 'approved';
+        candidateStatus = String(rows[i][4] || 'pending').trim().toLowerCase();
+        isApproved = (candidateStatus === 'approved');
         break;
       }
     }
 
     return ContentService.createTextOutput(JSON.stringify({
-      status: 'success',
-      email: targetEmail,
+      status: candidateStatus,
       candidateStatus: candidateStatus,
+      email: targetEmail,
       approved: isApproved
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
   // ── Action 2: Send OTP Email via Google MailApp ──
   if (action === 'SEND_OTP') {
-    var email = e.parameter['Email'] || '';
-    var name = e.parameter['Name'] || 'Participant';
-    var otp = e.parameter['OTP'] || '';
+    var email = (params['Email'] || '').trim();
+    var name = params['Name'] || 'Participant';
+    var otp = String(params['OTP'] || '').trim();
 
-    if (email && otp) {
+    if (!email || !otp) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', error: 'Missing Email or OTP parameter' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    try {
       MailApp.sendEmail({
         to: email,
-        subject: "Your SAFE Ltd. Assessment Verification Code",
-        htmlBody: "Hello " + name + ",<br><br>Your verification code to start the assessment is: <b>" + otp + "</b><br><br>This code expires in 10 minutes. If you did not request this code, please ignore this email.<br><br>Thank you,<br>SAFE Ltd."
+        subject: "Your SAFE Ltd. Assessment Verification Code: " + otp,
+        htmlBody: "Hello " + name + ",<br><br>Your verification code to start the assessment is: <b style='font-size:20px;letter-spacing:3px;color:#1e40af;'>" + otp + "</b><br><br>This code expires in 10 minutes. If you did not request this code, please ignore this email.<br><br>Thank you,<br><b>SAFE Ltd.</b>"
       });
       writeAuditLog(ss, 'SEND_OTP', email, 'Verification code dispatched');
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'OTP Sent' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (mailErr) {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', error: 'Mail delivery error: ' + mailErr.message }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'OTP Sent' }))
-      .setMimeType(ContentService.MimeType.JSON);
   }
 
   // ── Action 3: Request Access ──
   if (action === 'REQUEST_ACCESS') {
-    var reqEmail = (e.parameter['Email'] || '').trim().toLowerCase();
-    var reqName = sanitizeCell(e.parameter['Name'] || '');
-    var reqOrg = sanitizeCell(e.parameter['Organization'] || '');
-    var reqPhone = sanitizeCell(e.parameter['Phone'] || '');
+    var reqEmail = (params['Email'] || '').trim().toLowerCase();
+    var reqName = sanitizeCell(params['Name'] || '');
+    var reqOrg = sanitizeCell(params['Organization'] || '');
+    var reqPhone = sanitizeCell(params['Phone'] || '');
 
     if (reqEmail) {
       var sheet = ss.getSheetByName('Access_Requests');
@@ -177,7 +219,7 @@ function doPost(e) {
       for (var k = 1; k < rRows.length; k++) {
         if (String(rRows[k][0]).trim().toLowerCase() === reqEmail) {
           found = true;
-          if (rRows[k][4] !== 'approved') {
+          if (String(rRows[k][4]).toLowerCase() !== 'approved') {
             sheet.getRange(k + 1, 2).setValue(reqName);
             sheet.getRange(k + 1, 3).setValue(reqOrg);
             sheet.getRange(k + 1, 4).setValue(reqPhone);
@@ -192,7 +234,7 @@ function doPost(e) {
       }
       writeAuditLog(ss, 'REQUEST_ACCESS', reqEmail, 'Participant access requested');
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Requested' }))
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', candidateStatus: 'pending', message: 'Requested' }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -214,7 +256,7 @@ function doPost(e) {
           name: String(r[1] || ''),
           org: String(r[2] || ''),
           phone: String(r[3] || ''),
-          status: String(r[4] || 'pending'),
+          status: String(r[4] || 'pending').trim().toLowerCase(),
           requestedAt: r[5] ? String(r[5]) : '',
           approvedAt: r[6] ? String(r[6]) : ''
         };
@@ -226,8 +268,8 @@ function doPost(e) {
 
   // ── Action 5: Set Candidate Approval (Admin Only) ──
   if (action === 'SET_APPROVAL') {
-    var adminTargetEmail = (e.parameter['Email'] || '').trim().toLowerCase();
-    var newStatus = e.parameter['Status'] || 'approved';
+    var adminTargetEmail = (params['Email'] || '').trim().toLowerCase();
+    var newStatus = (params['Status'] || 'approved').trim().toLowerCase();
 
     if (adminTargetEmail) {
       var setSheet = ss.getSheetByName('Access_Requests');
@@ -243,7 +285,7 @@ function doPost(e) {
       }
       writeAuditLog(ss, 'SET_APPROVAL', adminTargetEmail, 'Status updated to ' + newStatus);
     }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', email: adminTargetEmail, status: newStatus }))
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', email: adminTargetEmail, candidateStatus: newStatus }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -255,17 +297,17 @@ function doPost(e) {
       resSheet.appendRow(['Date', 'Name', 'Organization', 'Location', 'Gender', 'DOB', 'Phone', 'Email', 'Result Code', 'Personality Type', 'Time Taken']);
     }
 
-    var date = sanitizeCell(e.parameter['Date'] || new Date().toLocaleDateString());
-    var pName = sanitizeCell(e.parameter['Name'] || '');
-    var org = sanitizeCell(e.parameter['Organization'] || '');
-    var loc = sanitizeCell(e.parameter['Location'] || '');
-    var gender = sanitizeCell(e.parameter['Gender'] || '');
-    var dob = sanitizeCell(e.parameter['DOB'] || '');
-    var phone = sanitizeCell(e.parameter['Phone'] || '');
-    var pEmail = sanitizeCell(e.parameter['Email'] || '');
-    var code = sanitizeCell(e.parameter['Result Code'] || '');
-    var type = sanitizeCell(e.parameter['Personality Type'] || '');
-    var timeTaken = sanitizeCell(e.parameter['Time Taken'] || '');
+    var date = sanitizeCell(params['Date'] || new Date().toLocaleDateString());
+    var pName = sanitizeCell(params['Name'] || '');
+    var org = sanitizeCell(params['Organization'] || '');
+    var loc = sanitizeCell(params['Location'] || '');
+    var gender = sanitizeCell(params['Gender'] || '');
+    var dob = sanitizeCell(params['DOB'] || '');
+    var phone = sanitizeCell(params['Phone'] || '');
+    var pEmail = sanitizeCell(params['Email'] || '');
+    var code = sanitizeCell(params['Result Code'] || '');
+    var type = sanitizeCell(params['Personality Type'] || '');
+    var timeTaken = sanitizeCell(params['Time Taken'] || '');
 
     resSheet.appendRow([date, pName, org, loc, gender, dob, phone, pEmail, code, type, timeTaken]);
     writeAuditLog(ss, 'SAVE_RESULT', pEmail, 'Result recorded: ' + code);
@@ -307,40 +349,64 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  return ContentService.createTextOutput(JSON.stringify({ error: "Unknown action" }))
+  return ContentService.createTextOutput(JSON.stringify({ status: "error", error: "Unknown action: " + action }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 ```
 
 ---
 
-## Step 2: Rotate the Shared Secret (Item 1 & 4)
+## Step 2: Authorize Google Permissions (One-Time Setup)
+
+Before deploying the Web App, Google requires your authorization to access the spreadsheet and send emails:
+
+1. In the Apps Script toolbar (next to the **Debug** button), find the function dropdown and select **`authorizeAndTest`**.
+2. Click **Run**.
+3. A popup will appear: **"Authorization required"**.
+4. Click **Review permissions**.
+5. Select your Google account.
+6. Click **Advanced** (at the bottom of the popup), then click **Go to SAFE Assessment (unsafe)**.
+7. Click **Allow**.
+8. In the **Execution log** at the bottom, you will see:
+   ```text
+   Active Spreadsheet: SAFE Assessment
+   Test email successfully sent to: your-email@gmail.com
+   ```
+   Check your email to confirm you received the test email!
+
+---
+
+## Step 3: Rotate the Shared Secret (Item 1 & 4)
 
 1. Generate a strong cryptographically random 32+ character hex string in your terminal:
    ```bash
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
-2. In the Apps Script code above, replace `SAFE_2026_SECURE_TOKEN_REPLACE_WITH_STRONG_RANDOM_SECRET` with this newly generated token.
-3. Update your server environment configuration:
-   - On your Hostinger VPS: update `GOOGLE_SCRIPT_SHARED_SECRET` in `/var/www/safe-assessment/server/.env`.
-   - On Vercel: update `GOOGLE_SCRIPT_SHARED_SECRET` in **Project Settings** &rarr; **Environment Variables**.
+2. In the Apps Script code, replace `SAFE_2026_SECURE_TOKEN_REPLACE_WITH_STRONG_RANDOM_SECRET` with this token.
+3. Keep this token safe: you will set it as `GOOGLE_SCRIPT_SHARED_SECRET` in your `.env` and Vercel.
 
 ---
 
-## Step 3: Deploy New Version & Revoke/Disable Old Deployments (P0 Item 4)
+## Step 4: Deploy as Web App & Revoke/Disable Old Deployments (P0 Item 4)
 
 1. In the Apps Script editor, click **Save** (disk icon).
-2. Click **Deploy** &rarr; **Manage deployments**.
-3. Under active deployments:
-   - Click the **Pencil (Edit)** icon at the top right.
-   - Under **Version**, select **New version**.
-   - Under **Who has access**, select **Anyone** (the script itself validates `SecretToken` on every request).
+2. Click **Deploy** &rarr; **New deployment** (or **Manage deployments** &rarr; edit to **New version**):
+   - **Select type:** Click the gear icon &rarr; select **Web app**.
+   - **Description:** `SAFE Assessment Hardened API v2`.
+   - **Execute as:** `Me (your-email@gmail.com)`.
+   - **Who has access:** `Anyone`.
    - Click **Deploy**.
+3. Copy the **Web app URL** (it looks like `https://script.google.com/macros/s/AKfycb.../exec`).
 4. **Revoke Old Deployments**:
-   - If any older deployment entries exist in the left sidebar of the **Manage deployments** dialog, select each old deployment and click **Archive** (or delete).
-   - This ensures any old unauthenticated script endpoints immediately stop responding to traffic.
-5. Copy the newly issued **Web app URL** (ends in `/exec`).
-6. Set this URL as `GOOGLE_SCRIPT_URL` in your server `.env` and Vercel Environment Variables.
+   - In **Deploy** &rarr; **Manage deployments**, select any previous or older deployment versions and click **Archive** (or Delete).
+5. Update your environment variables:
+   - In your local `.env`:
+     ```env
+     GOOGLE_SCRIPT_URL=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec
+     GOOGLE_SCRIPT_SHARED_SECRET=your_token_from_step_3
+     ```
+   - On Vercel: add `GOOGLE_SCRIPT_URL` and `GOOGLE_SCRIPT_SHARED_SECRET` in **Project Settings** &rarr; **Environment Variables**.
+   - On Hostinger VPS: update `/var/www/safe-assessment/server/.env`.
 
 ---
 

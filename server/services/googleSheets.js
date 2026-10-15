@@ -143,10 +143,13 @@ export async function getParticipantStatus(email) {
       Email: cleanEmail,
     })
 
+    const candidateStatus = String(json.candidateStatus || (json.status !== 'success' ? json.status : 'pending')).toLowerCase()
+    const isApproved = json.approved === true || candidateStatus === 'approved'
+
     return {
       email: cleanEmail,
-      status: json.status || 'pending',
-      approved: json.status === 'approved' || json.approved === true,
+      status: candidateStatus,
+      approved: isApproved,
     }
   } catch (err) {
     if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
