@@ -9,6 +9,7 @@ import authRoutes from './routes/auth.js'
 import accessRoutes from './routes/access.js'
 import assessmentRoutes from './routes/assessment.js'
 import adminRoutes from './routes/admin.js'
+import configRoutes from './routes/config.js'
 import { generalRateLimiter } from './middleware/rateLimiter.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -52,6 +53,8 @@ app.use('/api/auth', authRoutes)
 app.use('/api/access', accessRoutes)
 app.use('/api/assessment', assessmentRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/config', configRoutes)
+app.use('/api/admin/config', configRoutes)
 
 // In production on standalone VPS, can optionally serve built React dist if Nginx routes here
 const distPath = path.resolve(__dirname, '../dist')

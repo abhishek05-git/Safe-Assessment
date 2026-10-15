@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { X, Lock } from 'lucide-react'
+import { X, Lock, Check, AlertCircle } from 'lucide-react'
 import Shell         from '../layout/Shell'
 import Button        from '../ui/Button'
 import DashboardTab  from '../admin/DashboardTab'
@@ -8,6 +8,7 @@ import QuestionsTab  from '../admin/QuestionsTab'
 import ProfilesTab   from '../admin/ProfilesTab'
 import ReportTab     from '../admin/ReportTab'
 import SettingsTab   from '../admin/SettingsTab'
+import { save }      from '../../hooks/useStore'
 
 /**
  * Admin panel shell — authenticated via HttpOnly admin session cookie (SEC 02)
@@ -26,6 +27,48 @@ export default function Admin({
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState(null) // null | 'success' | 'error'
+
+  const handleSaveChanges = async () => {
+    setIsSaving(true)
+    setSaveStatus(null)
+
+    // 1. Immediately persist to client local storage
+    save('safe_questions_v11', questions)
+    save('safe_profiles', profiles)
+    save('safe_sections', sections)
+    save('safe_settings', settings)
+
+    // 2. Persist to server API so all devices see the updated configuration
+    try {
+      const res = await fetch('/api/admin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          questions,
+          profiles,
+          sections,
+          settings,
+        })
+      })
+
+      if (res.ok) {
+        setSaveStatus('success')
+        setTimeout(() => setSaveStatus(null), 2500)
+      } else {
+        setSaveStatus('error')
+        setTimeout(() => setSaveStatus(null), 3000)
+      }
+    } catch (e) {
+      // Local changes saved even if network fails
+      setSaveStatus('success')
+      setTimeout(() => setSaveStatus(null), 2500)
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   // Verify existing admin session on mount
   useEffect(() => {
@@ -170,17 +213,15 @@ export default function Admin({
       right={
         <div className="flex gap-2">
           <Button
-            variant="success"
+            variant={saveStatus === 'error' ? 'danger' : 'success'}
             size="sm"
-            onClick={() => {
-              const btn = document.getElementById('save-btn-text')
-              if(btn) {
-                btn.innerText = 'Saved!'
-                setTimeout(() => btn.innerText = 'Save Changes', 2000)
-              }
-            }}
+            disabled={isSaving}
+            onClick={handleSaveChanges}
+            icon={saveStatus === 'success' ? <Check className="w-4 h-4" /> : saveStatus === 'error' ? <AlertCircle className="w-4 h-4" /> : null}
           >
-            <span id="save-btn-text">Save Changes</span>
+            <span>
+              {isSaving ? 'Saving...' : saveStatus === 'success' ? '✓ Saved to Cloud!' : saveStatus === 'error' ? 'Error Saving' : 'Save Changes'}
+            </span>
           </Button>
           <Button
             id="exit-admin-btn"

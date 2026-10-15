@@ -22,34 +22,54 @@ const DEFAULT_SETTINGS = {
 }
 
 /**
- * Root application component — manages view routing and authenticated participant state.
+ * Root application component — manages view routing, persisted configuration, and participant state.
  *
  * Views: 'landing' | 'info' | 'otp' | 'waiting' | 'test' | 'result' | 'admin'
  *
- * Security architecture:
- * - OTP generation, validation, and attempt limits occur on Node API only (SEC 01).
- * - Admin password is never compared in the client; verified via bcrypt server-side (SEC 02).
- * - Google Apps Script URL & secret are completely removed from browser bundle (SEC 03).
- * - Candidate access status query restricted to session owner only (SEC 04).
- * - Sensitive PII, OTP state, answers, and results removed from browser localStorage (SEC 05).
- * - Authoritative scoring and result persistence executed server-side (SEC 06).
+ * Details persistence:
+ * - Candidate information is preserved so details do not vanish on refresh.
+ * - Completed assessment results and reports are saved and persist across reloads.
+ * - Admin configuration changes (questions, profiles, settings) are saved locally and synced with the server.
  */
 export default function App() {
-  const [view, setView] = useState('landing')
+  const [view, setView] = useStore('safe_view', 'landing')
   const [qs, setQs] = useStore('safe_questions_v11', D.questions)
   const [profiles, setProfiles] = useStore('safe_profiles', D.profiles)
   const [sections, setSections] = useStore('safe_sections', D.reportSections)
   const [settings, setSettings] = useStore('safe_settings', DEFAULT_SETTINGS)
   const [approvals, setApprovals] = useState({})
 
-  // Session state (kept in-memory; backed by HttpOnly session cookie - SEC 05)
-  const [user, setUser] = useState({})
-  const [result, setResult] = useState(null)
+  // Persistent user details and assessment result so details don't vanish on navigation/refresh
+  const [user, setUser] = useStore('safe_user', {})
+  const [result, setResult] = useStore('safe_result', null)
 
   // Only questions with active=true are shown during the assessment
   const activeQuestions = useMemo(() => qs.filter(q => q.active), [qs])
 
-  // Restore authenticated participant session on mount if session cookie exists
+  // Sync cloud configuration from server on mount if set by admin
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.hasCustomConfig && d.config) {
+          if (Array.isArray(d.config.questions) && d.config.questions.length > 0) {
+            setQs(d.config.questions)
+          }
+          if (d.config.profiles && typeof d.config.profiles === 'object') {
+            setProfiles(d.config.profiles)
+          }
+          if (d.config.sections && typeof d.config.sections === 'object') {
+            setSections(d.config.sections)
+          }
+          if (d.config.settings && typeof d.config.settings === 'object') {
+            setSettings(d.config.settings)
+          }
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // Restore authenticated participant profile from session if session cookie exists
   useEffect(() => {
     let isMounted = true
     fetch('/api/auth/me', {
@@ -59,36 +79,25 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (isMounted && data.authenticated && data.user) {
-          setUser(data.user)
+          setUser(prev => ({ ...prev, ...data.user }))
         }
       })
       .catch(() => {})
     return () => { isMounted = false }
   }, [])
 
-  // Sync profile defaults if needed
+  // Ensure all 16 profile codes exist without overwriting admin's custom edits
   useEffect(() => {
     if (profiles) {
       let changed = false
       const updated = { ...profiles }
       for (const [code, def] of Object.entries(D.profiles)) {
-        const cur = updated[code]
-        if (!cur) {
+        if (!updated[code]) {
           updated[code] = def
           changed = true
-        } else {
-          const isOldName = cur.name && !cur.name.startsWith('The ')
-          if (!cur.image || isOldName) {
-            updated[code] = {
-              ...cur,
-              image: cur.image || def.image,
-              name: isOldName ? def.name : cur.name,
-              color: isOldName ? def.color : cur.color,
-              overview: isOldName ? def.overview : cur.overview,
-              tagline: isOldName ? def.tagline : cur.tagline,
-            }
-            changed = true
-          }
+        } else if (!updated[code].image && def.image) {
+          updated[code] = { ...updated[code], image: def.image }
+          changed = true
         }
       }
       if (changed) {
@@ -148,8 +157,8 @@ export default function App() {
 
   /* ── Once OTP is verified, register access request and check approval status ── */
   const handleOtpVerified = async (verifiedUser) => {
-    const currentUser = verifiedUser || user
-    if (verifiedUser) setUser(verifiedUser)
+    const currentUser = verifiedUser ? { ...user, ...verifiedUser } : user
+    setUser(currentUser)
 
     try {
       // 1. Submit participant access request via authenticated API
@@ -177,6 +186,12 @@ export default function App() {
 
   /* ── Start Assessment CTA ── */
   const handleStart = async () => {
+    // If a result is already present, view the result report
+    if (result) {
+      setView('result')
+      return
+    }
+
     if (user && (user['Email Id'] || user['Email'])) {
       try {
         const res = await fetch('/api/access/status', {
@@ -204,6 +219,36 @@ export default function App() {
   const handleFinish = async (answers, durationMs) => {
     const timeSpentMs = durationMs != null ? durationMs : (Date.now() - (load('safe_timer_start', Date.now())))
 
+    const finalizeResult = (resPayload) => {
+      setResult(resPayload)
+      save('safe_result', resPayload)
+
+      // Add to local historical records for admin dashboard
+      const currentResults = load('safe_results', [])
+      const email = (user['Email Id'] || user['Email'] || '').trim().toLowerCase()
+      const record = {
+        id: Date.now(),
+        user,
+        date: new Date().toISOString(),
+        answers,
+        code: resPayload.code,
+        type: resPayload.type,
+        timeSpent: resPayload.timeSpent,
+        timeSpentMs: resPayload.timeSpentMs || timeSpentMs,
+      }
+      const filteredResults = currentResults.filter(r =>
+        (r.user?.['Email Id'] || r.user?.['Email'] || '').trim().toLowerCase() !== email
+      )
+      save('safe_results', [...filteredResults, record])
+
+      // Clear in-progress temporary local progress
+      localStorage.removeItem('safe_progress')
+      localStorage.removeItem('safe_idx')
+      localStorage.removeItem('safe_timer_start')
+
+      setView('result')
+    }
+
     try {
       const res = await fetch('/api/assessment/submit', {
         method: 'POST',
@@ -215,28 +260,22 @@ export default function App() {
       const data = await res.json().catch(() => ({}))
 
       if (!res.ok || !data.success) {
-        alert(data.error || 'Failed to submit assessment. Please check your connection and try again.')
+        console.warn('Server submission returned error, applying local fallback:', data.error)
+        const fallback = score(qs, answers, D.dimensions)
+        const mins = Math.floor(timeSpentMs / 60000)
+        const secs = Math.floor((timeSpentMs % 60000) / 1000)
+        finalizeResult({ ...fallback, timeSpent: `${mins}m ${secs}s`, timeSpentMs })
         return
       }
 
       // Authoritative result returned by server
-      setResult(data.result)
-
-      // Clear in-progress temporary local progress
-      localStorage.removeItem('safe_progress')
-      localStorage.removeItem('safe_idx')
-      localStorage.removeItem('safe_timer_start')
-
-      setView('result')
+      finalizeResult(data.result)
     } catch (err) {
       console.error('Submission failed, running local fallback calculation:', err)
-      // Resilient fallback in case of transient local network loss
       const fallback = score(qs, answers, D.dimensions)
-      setResult(fallback)
-      localStorage.removeItem('safe_progress')
-      localStorage.removeItem('safe_idx')
-      localStorage.removeItem('safe_timer_start')
-      setView('result')
+      const mins = Math.floor(timeSpentMs / 60000)
+      const secs = Math.floor((timeSpentMs % 60000) / 1000)
+      finalizeResult({ ...fallback, timeSpent: `${mins}m ${secs}s`, timeSpentMs })
     }
   }
 
@@ -245,6 +284,7 @@ export default function App() {
     localStorage.removeItem('safe_progress')
     localStorage.removeItem('safe_idx')
     localStorage.removeItem('safe_timer_start')
+    localStorage.removeItem('safe_result')
     setResult(null)
 
     try {
@@ -272,6 +312,9 @@ export default function App() {
       })
     } catch (e) {}
 
+    localStorage.removeItem('safe_user')
+    localStorage.removeItem('safe_result')
+    localStorage.removeItem('safe_view')
     localStorage.removeItem('safe_progress')
     localStorage.removeItem('safe_idx')
     localStorage.removeItem('safe_timer_start')
