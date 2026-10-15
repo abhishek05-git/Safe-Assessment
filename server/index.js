@@ -77,7 +77,11 @@ app.use((err, req, res, next) => {
   })
 })
 
-app.listen(PORT, HOST, () => {
-  console.log(`🛡️ SAFE Assessment Security API running on http://${HOST}:${PORT}`)
-  console.log(`🔒 Boundary: Private service (Reverse proxy via Nginx recommended)`)
-})
+if (!process.env.VERCEL) {
+  app.listen(PORT, HOST, () => {
+    console.log(`🛡️ SAFE Assessment Security API running on http://${HOST}:${PORT}`)
+    console.log(`🔒 Boundary: Private service (Reverse proxy via Nginx recommended)`)
+  })
+}
+
+export default app

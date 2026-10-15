@@ -19,7 +19,24 @@ router.post('/request-otp', otpRequestRateLimiter, async (req, res) => {
       return res.status(400).json({ error: 'A valid email address is required.' })
     }
 
-    const { otp, expiresAt } = generateOtpChallenge(email, userDetails || { Name: name, 'Email Id': email })
+    const { otp, expiresAt, hash, userDetails: savedDetails } = generateOtpChallenge(
+      email,
+      userDetails || { Name: name, 'Email Id': email }
+    )
+
+    // Issue signed HttpOnly challenge cookie so serverless environments (like Vercel) maintain state
+    const challengeToken = createSessionToken(
+      {
+        challenge: true,
+        email: email.trim().toLowerCase(),
+        hash,
+        expiresAt,
+        userDetails: savedDetails,
+      },
+      10 * 60 * 1000
+    )
+
+    res.cookie('safe_otp_challenge', challengeToken, getCookieOptions(10 * 60 * 1000))
 
     // Send email via Apps Script integration
     await sendOtpEmail(email, name, otp)
@@ -50,10 +67,16 @@ router.post('/verify-otp', otpVerifyRateLimiter, (req, res) => {
     return res.status(400).json({ error: 'Email and verification code are required.' })
   }
 
-  const result = verifyOtp(email, otp)
+  const challengeCookie = req.cookies?.safe_otp_challenge
+  const cookieChallenge = verifySessionToken(challengeCookie)
+
+  const result = verifyOtp(email, otp, cookieChallenge)
   if (!result.valid) {
     return res.status(400).json({ error: result.error || 'Invalid verification code.' })
   }
+
+  // Clear challenge cookie
+  res.clearCookie('safe_otp_challenge', { path: '/' })
 
   // Verification succeeded - issue HttpOnly session cookie
   const sessionToken = createSessionToken({

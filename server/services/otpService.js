@@ -47,28 +47,34 @@ export function generateOtpChallenge(email, userDetails = {}) {
   const hash = hashOtp(otp, cleanEmail)
   const expiresAt = Date.now() + OTP_EXPIRY_MS
 
+  const savedDetails = {
+    ...userDetails,
+    'Email Id': cleanEmail,
+    Email: cleanEmail,
+  }
+
   challenges.set(cleanEmail, {
     hash,
     expiresAt,
     attempts: 0,
     lastSentAt: Date.now(),
-    userDetails: {
-      ...userDetails,
-      'Email Id': cleanEmail,
-      Email: cleanEmail,
-    },
+    userDetails: savedDetails,
   })
 
-  return { otp, expiresAt }
+  return { otp, expiresAt, hash, userDetails: savedDetails }
 }
 
 /**
  * Verify an OTP.
  * Returns { valid: boolean, error?: string, userDetails?: object }
  */
-export function verifyOtp(email, enteredOtp) {
+export function verifyOtp(email, enteredOtp, fallbackChallenge = null) {
   const cleanEmail = email.trim().toLowerCase()
-  const challenge = challenges.get(cleanEmail)
+  let challenge = challenges.get(cleanEmail)
+
+  if (!challenge && fallbackChallenge && fallbackChallenge.email === cleanEmail) {
+    challenge = { ...fallbackChallenge }
+  }
 
   if (!challenge) {
     return { valid: false, error: 'No verification code found. Please request a new one.' }
@@ -84,7 +90,7 @@ export function verifyOtp(email, enteredOtp) {
     return { valid: false, error: 'Too many incorrect attempts. Please request a new code.' }
   }
 
-  challenge.attempts += 1
+  challenge.attempts = (challenge.attempts || 0) + 1
 
   const enteredHash = hashOtp(String(enteredOtp).trim(), cleanEmail)
   const a = Buffer.from(enteredHash, 'hex')
