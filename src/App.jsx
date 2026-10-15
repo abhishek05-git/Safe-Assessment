@@ -85,6 +85,25 @@ export default function App() {
     return () => { isMounted = false }
   }, [])
 
+  // SEC-GUARD: Ensure unapproved candidates never persist in 'test' view on reload/revisit
+  useEffect(() => {
+    if (view === 'test') {
+      fetch('/api/access/status', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (!data || data.approved !== true) {
+            setView('waiting')
+          }
+        })
+        .catch(() => {
+          setView('waiting')
+        })
+    }
+  }, [view])
+
   // Ensure all 16 profile codes exist without overwriting admin's custom edits
   useEffect(() => {
     if (profiles) {
@@ -173,7 +192,8 @@ export default function App() {
       })
       const statusData = await res.json().catch(() => ({}))
 
-      if (settings?.requireApproval === false || statusData.approved) {
+      // Strictly wait for admin approval — never open test automatically unless confirmed approved by server
+      if (statusData && statusData.approved === true) {
         setView('test')
       } else {
         setView('waiting')
@@ -198,7 +218,8 @@ export default function App() {
           headers: { 'Accept': 'application/json' }
         })
         const data = await res.json().catch(() => ({}))
-        if (settings?.requireApproval === false || data.approved) {
+        // Strictly require server confirmation of approved === true
+        if (data && data.approved === true) {
           setView('test')
           return
         } else if (res.ok) {
@@ -287,7 +308,7 @@ export default function App() {
         headers: { 'Accept': 'application/json' }
       })
       const data = await res.json().catch(() => ({}))
-      if (settings?.requireApproval === false || data.approved) {
+      if (data && data.approved === true) {
         setView('test')
       } else {
         setView('waiting')
@@ -359,6 +380,7 @@ export default function App() {
       <Test
         questions={activeQuestions}
         onHome={() => setView('landing')}
+        onAccessDenied={() => setView('waiting')}
         onFinish={handleFinish}
         user={user}
         onLogout={handleLogout}

@@ -46,7 +46,46 @@ const getStartTime = () => {
 /**
  * Main assessment screen with 30-minute countdown timer and timeline.
  */
-export default function Test({ questions, onHome, onFinish, user, onLogout }) {
+export default function Test({ questions, onHome, onAccessDenied, onFinish, user, onLogout }) {
+  // Authoritative server-side access verification on mount
+  const [accessVerified, setAccessVerified] = useState(false)
+  const [checkingAccess, setCheckingAccess] = useState(true)
+
+  // SEC-ACCESS: Verify participant is approved by admin before rendering test or starting countdown
+  useEffect(() => {
+    let isMounted = true
+
+    const verifyApprovalStatus = async () => {
+      try {
+        const res = await fetch('/api/access/status', {
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' }
+        })
+        const data = await res.json().catch(() => ({}))
+        if (isMounted) {
+          if (res.ok && data && data.approved === true) {
+            setAccessVerified(true)
+          } else {
+            setAccessVerified(false)
+            if (onAccessDenied) onAccessDenied()
+            else onHome()
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          setAccessVerified(false)
+          if (onAccessDenied) onAccessDenied()
+          else onHome()
+        }
+      } finally {
+        if (isMounted) setCheckingAccess(false)
+      }
+    }
+
+    verifyApprovalStatus()
+    return () => { isMounted = false }
+  }, [onAccessDenied, onHome])
+
   // P0 Item 3: Keep answers in React memory only. Do not persist in browser storage.
   const [answers, setAnswers] = useState({})
   const [index,   setIndex]   = useState(0)
@@ -97,8 +136,10 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
     }
   }
 
-  /* ── 30-Minute Countdown Interval with Milliseconds ──────────── */
+  /* ── 30-Minute Countdown Interval with Milliseconds (Active only after access confirmed) ── */
   useEffect(() => {
+    if (!accessVerified) return
+
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTime
       const rem = Math.max(0, TOTAL_TIME_MS - elapsed)
@@ -112,7 +153,7 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
     }, 35) // ~28 updates per second for smooth millisecond display
 
     return () => clearInterval(interval)
-  }, [startTime])
+  }, [startTime, accessVerified])
 
   /* ── Navigate ─────────────────────────────────────── */
   const navigate = (dir) => {
@@ -148,6 +189,24 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [answered, questions.length, remainingMs])
+
+  if (checkingAccess) {
+    return (
+      <Shell onHome={onHome} user={user} onLogout={onLogout}>
+        <div className="max-w-md mx-auto pt-24 pb-16 text-center">
+          <div className="glass p-8 space-y-4">
+            <div className="w-12 h-12 border-4 border-sky/30 border-t-sky rounded-full animate-spin mx-auto" />
+            <h3 className="font-heading font-bold text-lg text-navy">Verifying Access Authorization</h3>
+            <p className="text-slate-500 text-xs">Checking administrator approval status before opening the assessment...</p>
+          </div>
+        </div>
+      </Shell>
+    )
+  }
+
+  if (!accessVerified) {
+    return null
+  }
 
   if (!question) return null
 

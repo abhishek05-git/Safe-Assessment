@@ -26,9 +26,11 @@ export default function WaitingApproval({ user, onHome, onStartTest, onLogout })
         })
         if (res.ok) {
           const json = await res.json()
-          if (isMounted && json && json.approved) {
-            setIsApproved(true)
+          if (isMounted && json) {
+            setIsApproved(Boolean(json.approved))
           }
+        } else if (isMounted) {
+          setIsApproved(false)
         }
       } catch (e) {
         // Silent fallback on network drop
@@ -56,13 +58,37 @@ export default function WaitingApproval({ user, onHome, onStartTest, onLogout })
       })
       if (res.ok) {
         const json = await res.json()
-        if (json && json.approved) {
-          setIsApproved(true)
+        if (json) {
+          setIsApproved(Boolean(json.approved))
         }
+      } else {
+        setIsApproved(false)
       }
     } catch (e) {}
     setLastChecked(new Date())
     setChecking(false)
+  }
+
+  // Authoritative pre-flight check before transitioning to the 30-minute assessment
+  const handleStartAssessment = async () => {
+    setChecking(true)
+    try {
+      const res = await fetch('/api/access/status', {
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      })
+      const json = await res.json().catch(() => ({}))
+      if (res.ok && json && json.approved === true) {
+        onStartTest()
+      } else {
+        setIsApproved(false)
+        alert('Access has not been approved yet. Please wait for an administrator to approve your request.')
+      }
+    } catch (e) {
+      alert('Unable to confirm access approval status with the server. Please check your connection and retry.')
+    } finally {
+      setChecking(false)
+    }
   }
 
   const userName = user?.['Name'] || user?.['Full Name'] || 'Candidate'
@@ -178,9 +204,10 @@ export default function WaitingApproval({ user, onHome, onStartTest, onLogout })
                 size="lg"
                 className="w-full justify-center text-base py-3.5 shadow-xl shadow-sky/20 group"
                 iconRight={<ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />}
-                onClick={onStartTest}
+                onClick={handleStartAssessment}
+                disabled={checking}
               >
-                Start Assessment (30 Minutes)
+                {checking ? 'Verifying Authorization...' : 'Start Assessment (30 Minutes)'}
               </Button>
               <p className="text-[11px] text-slate-400">
                 Make sure you are in a quiet environment before starting.
