@@ -26,3 +26,6 @@ Thumbs.db
 # Scratch temp files
 scratch/setup_git.ps1
 vite.config.js.timestamp*
+
+# Server local data store
+server/data/

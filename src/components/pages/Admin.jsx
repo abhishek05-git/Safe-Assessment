@@ -94,6 +94,24 @@ export default function Admin({
     return () => { isMounted = false }
   }, [])
 
+  // Sync candidate approvals once authenticated so pending badge and count are accurate on Dashboard
+  useEffect(() => {
+    if (!isAuthenticated) return
+    let isMounted = true
+    fetch('/api/admin/approvals', {
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' }
+    })
+      .then(res => res.json())
+      .then(json => {
+        if (isMounted && json && json.approvals && typeof json.approvals === 'object') {
+          if (setApprovals) setApprovals(json.approvals)
+        }
+      })
+      .catch(() => {})
+    return () => { isMounted = false }
+  }, [isAuthenticated])
+
   const handleLogin = async (e) => {
     e.preventDefault()
     setError('')

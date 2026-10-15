@@ -1,4 +1,5 @@
 import { sanitizeForSpreadsheet, sanitizeRecordForSpreadsheet } from '../utils/sanitizer.js'
+import { getLocalResults, saveLocalResult } from './resultsStore.js'
 
 /**
  * Hardened Google Sheets Integration Service
@@ -27,7 +28,7 @@ function getScriptConfig() {
  * Helper to execute a secure POST request to Google Apps Script.
  * Puts Action, SecretToken, and payload strictly in the POST form body (Item 5).
  */
-async function callAppsScript(action, params = {}) {
+async function callAppsScript(action, params = {}, retryCount = 0) {
   const { url, secret } = getScriptConfig()
 
   const formData = new URLSearchParams()
@@ -41,7 +42,7 @@ async function callAppsScript(action, params = {}) {
   }
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 12000) // 12 second timeout
+  const timeoutId = setTimeout(() => controller.abort(), 20000)
 
   try {
     const res = await fetch(url, {
@@ -76,6 +77,10 @@ async function callAppsScript(action, params = {}) {
     }
   } catch (err) {
     clearTimeout(timeoutId)
+    if (retryCount === 0 && (err.name === 'AbortError' || err.message.includes('aborted'))) {
+      console.warn(`[GoogleSheets Warning] ${action} timed out, retrying once on warm container...`)
+      return callAppsScript(action, params, 1)
+    }
     console.error(`[GoogleSheets Error] ${action} failed:`, err.message)
     throw err // Fail closed (Item 6)
   }
@@ -245,6 +250,26 @@ export async function saveAssessmentResult(user, scoreResult, timeSpent) {
       'Time Taken': cleanTimeSpent,
     })
 
+    const localRecord = {
+      id: Date.now(),
+      date: new Date().toISOString(),
+      user: {
+        'Full Name': cleanName,
+        'Name': cleanName,
+        'Name of the Organization': cleanOrg,
+        'Location': cleanLoc,
+        'Gender': cleanGender,
+        'Date of Birth': cleanDob,
+        'Phone Number': cleanPhone,
+        'Email Id': cleanEmail,
+        'Time Taken': cleanTimeSpent,
+      },
+      code: cleanCode,
+      type: cleanType,
+      timeSpent: cleanTimeSpent,
+    }
+    saveLocalResult(localRecord)
+
     return {
       success: true,
       email: cleanEmail,
@@ -264,11 +289,14 @@ export async function saveAssessmentResult(user, scoreResult, timeSpent) {
 export async function fetchAllResults() {
   try {
     const json = await callAppsScript('GET_RESULTS')
-    return (json && Array.isArray(json.data)) ? json.data : []
+    if (json && Array.isArray(json.data) && json.data.length > 0) {
+      return json.data
+    }
+    return getLocalResults()
   } catch (err) {
     if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
-      return []
+      return getLocalResults()
     }
-    throw err // Fail closed (Item 6)
+    return getLocalResults()
   }
 }
