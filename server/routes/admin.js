@@ -2,21 +2,15 @@ import express from 'express'
 import bcrypt from 'bcryptjs'
 import { requireAdminAuth } from '../middleware/auth.js'
 import { adminLoginRateLimiter } from '../middleware/rateLimiter.js'
-import { createSessionToken, getCookieOptions, verifySessionToken } from '../services/sessionService.js'
+import { createSessionToken, getCookieOptions, verifySessionToken, revokeSession, revokeAllUserSessions } from '../services/sessionService.js'
 import { fetchAllApprovals, updateCandidateApproval, fetchAllResults } from '../services/googleSheets.js'
 
 const router = express.Router()
 
-// Default hash for 'admin' (used as dev fallback if ADMIN_PASSWORD_HASH is not set in .env)
-const DEV_DEFAULT_ADMIN_HASH = '$2b$10$aw5EQ3Nv8c50FX4gdApNZOfNL0Cb2kRxzk5Y4YBeFWBkoDmTGM1Ci' // bcrypt of 'admin'
-
-function getAdminHash() {
-  return process.env.ADMIN_PASSWORD_HASH || DEV_DEFAULT_ADMIN_HASH
-}
-
 /**
  * POST /api/admin/login
  * Verifies admin password hash and issues HttpOnly admin session (SEC 02)
+ * Default fallback credentials removed (Item 1).
  */
 router.post('/login', adminLoginRateLimiter, async (req, res) => {
   const { password } = req.body || {}
@@ -25,20 +19,25 @@ router.post('/login', adminLoginRateLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Admin password is required.' })
   }
 
-  const hash = getAdminHash()
+  const hash = process.env.ADMIN_PASSWORD_HASH
+  if (!hash) {
+    console.error('[SECURITY FATAL] Admin login attempted but ADMIN_PASSWORD_HASH is not set.')
+    return res.status(500).json({ error: 'Server authentication configuration missing. Access denied.' })
+  }
+
   const isMatch = await bcrypt.compare(password, hash)
 
   if (!isMatch) {
     return res.status(401).json({ error: 'Incorrect administrator password.' })
   }
 
-  // Issue HttpOnly admin session cookie
+  // Issue HttpOnly admin session cookie with 2-hour expiry and unique nonce (Item 11)
   const sessionToken = createSessionToken(
     { role: 'admin' },
-    8 * 60 * 60 * 1000 // 8 hours admin session
+    2 * 60 * 60 * 1000 // 2 hours admin session
   )
 
-  res.cookie('safe_admin_session', sessionToken, getCookieOptions(8 * 60 * 60 * 1000))
+  res.cookie('safe_admin_session', sessionToken, getCookieOptions(2 * 60 * 60 * 1000))
 
   console.log(`[AUDIT] Successful admin login from ${req.ip} at ${new Date().toISOString()}`)
 
@@ -62,9 +61,15 @@ router.get('/check', (req, res) => {
 
 /**
  * POST /api/admin/logout
- * Clears admin session cookie
+ * Clears and actively revokes admin session cookie (Item 11)
  */
 router.post('/logout', (req, res) => {
+  const token = req.cookies?.safe_admin_session
+  const session = verifySessionToken(token)
+  if (session?.sessionId) {
+    revokeSession(session.sessionId)
+  }
+
   res.clearCookie('safe_admin_session', { path: '/' })
   return res.json({ success: true })
 })
@@ -78,13 +83,15 @@ router.get('/approvals', requireAdminAuth, async (req, res) => {
     const approvals = await fetchAllApprovals()
     return res.json({ success: true, approvals })
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to fetch candidate approvals.' })
+    console.error('[Admin Approvals Error]:', err.message)
+    return res.status(502).json({ error: 'Failed to fetch candidate approvals from data store.' })
   }
 })
 
 /**
  * POST /api/admin/approvals/:email
  * Updates candidate access status and writes audit log event
+ * Revokes sessions immediately if access is revoked (Item 11).
  */
 router.post('/approvals/:email', requireAdminAuth, async (req, res) => {
   try {
@@ -95,15 +102,22 @@ router.post('/approvals/:email', requireAdminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Valid email and status ("approved" | "pending") required.' })
     }
 
-    const updated = await updateCandidateApproval(email, status)
+    const cleanEmail = email.trim().toLowerCase()
+    const updated = await updateCandidateApproval(cleanEmail, status)
+
+    // If revoked to pending, invalidate any active participant sessions immediately (Item 11)
+    if (status === 'pending') {
+      revokeAllUserSessions(cleanEmail)
+    }
 
     console.log(
-      `[AUDIT] Admin updated approval for ${email} to "${status}" at ${new Date().toISOString()} (IP: ${req.ip})`
+      `[AUDIT] Admin updated approval for ${cleanEmail} to "${status}" at ${new Date().toISOString()} (IP: ${req.ip})`
     )
 
     return res.json({ success: true, record: updated })
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to update candidate approval.' })
+    console.error('[Admin Update Approval Error]:', err.message)
+    return res.status(502).json({ error: 'Failed to update candidate approval in data store.' })
   }
 })
 
@@ -116,7 +130,8 @@ router.get('/results', requireAdminAuth, async (req, res) => {
     const results = await fetchAllResults()
     return res.json({ success: true, results })
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to fetch assessment results.' })
+    console.error('[Admin Results Error]:', err.message)
+    return res.status(502).json({ error: 'Failed to fetch assessment results from data store.' })
   }
 })
 

@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { useStore, load, save } from './hooks/useStore'
 import * as D from './data/config'
-import { score } from './engine/scoring'
 
 // Pages
 import Landing from './components/pages/Landing'
@@ -215,11 +214,28 @@ export default function App() {
     }
   }
 
-  /* ── Authoritative Server-Side Scoring & Submission (SEC 06) ── */
+  /* ── Authoritative Server-Side Scoring & Submission (P0 Item 2) ── */
   const handleFinish = async (answers, durationMs) => {
-    const timeSpentMs = durationMs != null ? durationMs : (Date.now() - (load('safe_timer_start', Date.now())))
+    const timeSpentMs = durationMs != null ? durationMs : 0
 
-    const finalizeResult = (resPayload) => {
+    try {
+      const res = await fetch('/api/assessment/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ answers, durationMs: timeSpentMs })
+      })
+
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok || !data.success || !data.result) {
+        const errorMsg = data.error || 'Server rejected submission or failed to record result.'
+        console.error('Server submission failed:', errorMsg)
+        return { success: false, error: errorMsg }
+      }
+
+      // Authoritative result returned exclusively by server (P0 Item 2)
+      const resPayload = data.result
       setResult(resPayload)
       save('safe_result', resPayload)
 
@@ -241,41 +257,19 @@ export default function App() {
       )
       save('safe_results', [...filteredResults, record])
 
-      // Clear in-progress temporary local progress
+      // Clean up temporary local markers
       localStorage.removeItem('safe_progress')
       localStorage.removeItem('safe_idx')
       localStorage.removeItem('safe_timer_start')
 
       setView('result')
-    }
-
-    try {
-      const res = await fetch('/api/assessment/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ answers, durationMs: timeSpentMs })
-      })
-
-      const data = await res.json().catch(() => ({}))
-
-      if (!res.ok || !data.success) {
-        console.warn('Server submission returned error, applying local fallback:', data.error)
-        const fallback = score(qs, answers, D.dimensions)
-        const mins = Math.floor(timeSpentMs / 60000)
-        const secs = Math.floor((timeSpentMs % 60000) / 1000)
-        finalizeResult({ ...fallback, timeSpent: `${mins}m ${secs}s`, timeSpentMs })
-        return
-      }
-
-      // Authoritative result returned by server
-      finalizeResult(data.result)
+      return { success: true }
     } catch (err) {
-      console.error('Submission failed, running local fallback calculation:', err)
-      const fallback = score(qs, answers, D.dimensions)
-      const mins = Math.floor(timeSpentMs / 60000)
-      const secs = Math.floor((timeSpentMs % 60000) / 1000)
-      finalizeResult({ ...fallback, timeSpent: `${mins}m ${secs}s`, timeSpentMs })
+      console.error('Submission network error:', err)
+      return {
+        success: false,
+        error: 'Network connection error while contacting scoring server. Please check your internet connection and retry.'
+      }
     }
   }
 

@@ -34,13 +34,7 @@ export default function Admin({
     setIsSaving(true)
     setSaveStatus(null)
 
-    // 1. Immediately persist to client local storage
-    save('safe_questions_v11', questions)
-    save('safe_profiles', profiles)
-    save('safe_sections', sections)
-    save('safe_settings', settings)
-
-    // 2. Persist to server API so all devices see the updated configuration
+    // Authoritative server-side persistence (Item 13)
     try {
       const res = await fetch('/api/admin/config', {
         method: 'POST',
@@ -54,17 +48,25 @@ export default function Admin({
         })
       })
 
-      if (res.ok) {
+      const data = await res.json().catch(() => ({}))
+
+      if (res.ok && data.success) {
+        // Cache to local storage only after authoritative server confirms save
+        save('safe_questions_v11', questions)
+        save('safe_profiles', profiles)
+        save('safe_sections', sections)
+        save('safe_settings', settings)
         setSaveStatus('success')
         setTimeout(() => setSaveStatus(null), 2500)
       } else {
         setSaveStatus('error')
+        alert(`Failed to save configuration to server: ${data.error || 'Server rejected changes'}`)
         setTimeout(() => setSaveStatus(null), 3000)
       }
     } catch (e) {
-      // Local changes saved even if network fails
-      setSaveStatus('success')
-      setTimeout(() => setSaveStatus(null), 2500)
+      setSaveStatus('error')
+      alert('Network error: Unable to reach authoritative server to save configuration.')
+      setTimeout(() => setSaveStatus(null), 3000)
     } finally {
       setIsSaving(false)
     }

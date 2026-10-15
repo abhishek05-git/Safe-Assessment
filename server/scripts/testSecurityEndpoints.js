@@ -10,6 +10,12 @@
  */
 
 import http from 'http'
+import bcrypt from 'bcryptjs'
+
+// Setup isolated test environment credentials (P0 Item 1)
+process.env.SESSION_SECRET = 'test_session_secret_for_automated_testing_123456789'
+process.env.OTP_PEPPER = 'test_otp_pepper_for_automated_testing_123456789'
+process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync('admin', 10)
 
 async function runTests() {
   console.log('--- Starting SAFE Assessment Security Controls Automated Test ---')
@@ -138,6 +144,49 @@ async function runTests() {
   assert(
     participantToAdminRes.status === 403,
     'SEC 04 / Acceptance Checklist: Participant session rejected with 403 when attempting admin endpoints'
+  )
+
+  // TEST 13: CSRF / Origin Validation (Item 7)
+  const csrfBlockedRes = await fetch(`${baseUrl}/api/admin/config`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Origin': 'https://evil-attacker-website.com',
+      Cookie: adminCookie
+    },
+    body: JSON.stringify({ settings: {} })
+  })
+  assert(
+    csrfBlockedRes.status === 403,
+    'Item 7 (P1): Cross-origin state mutation from unauthorized Origin is rejected with 403 Forbidden'
+  )
+
+  // TEST 14: Session Revocation (Item 11)
+  // Logout participant
+  const logoutRes = await fetch(`${baseUrl}/api/auth/logout`, {
+    method: 'POST',
+    headers: { Cookie: participantCookie }
+  })
+  assert(logoutRes.ok, 'Item 11 (P1): Logout endpoint succeeds')
+
+  // Using the revoked cookie should now be rejected with 401
+  const revokedAccessRes = await fetch(`${baseUrl}/api/access/status`, {
+    headers: { Cookie: participantCookie }
+  })
+  assert(
+    revokedAccessRes.status === 401,
+    'Item 11 (P1): Revoked session cookie is immediately rejected on subsequent authenticated requests'
+  )
+
+  // TEST 15: Server Input Validation (Item 8)
+  const invalidEmailRes = await fetch(`${baseUrl}/api/auth/request-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'not-an-email', name: 'Valid Name' })
+  })
+  assert(
+    invalidEmailRes.status === 400,
+    'Item 8 (P1): Server-side input validation rejects malformed email with 400 Bad Request'
   )
 
   console.log(`\nResults: ${passed} Passed, ${failed} Failed`)

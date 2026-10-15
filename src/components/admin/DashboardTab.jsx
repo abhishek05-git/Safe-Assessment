@@ -62,6 +62,16 @@ export default function DashboardTab({ questions, pendingAccessCount = 0, onGoTo
       'Personality Type'
     ]
 
+    // Escape spreadsheet formulas (=, +, -, @) to prevent CSV injection (Item 8)
+    const sanitizeCsvField = (val) => {
+      if (val == null) return '""'
+      let str = String(val).replace(/"/g, '""')
+      if (/^[=+\-@\t\r]/.test(str)) {
+        str = "'" + str
+      }
+      return `"${str}"`
+    }
+
     const rows = results.map(r => {
       const date = r.date ? new Date(r.date).toLocaleDateString() : ''
       const name = r.user?.['Name'] || r.user?.['Full Name'] || ''
@@ -76,17 +86,17 @@ export default function DashboardTab({ questions, pendingAccessCount = 0, onGoTo
       const type = r.type || ''
 
       return [
-        `"${date}"`,
-        `"${name.replace(/"/g, '""')}"`,
-        `"${timeTaken.replace(/"/g, '""')}"`,
-        `"${org.replace(/"/g, '""')}"`,
-        `"${loc.replace(/"/g, '""')}"`,
-        `"${gender.replace(/"/g, '""')}"`,
-        `"${dob.replace(/"/g, '""')}"`,
-        `"${phone.replace(/"/g, '""')}"`,
-        `"${email.replace(/"/g, '""')}"`,
-        `"${code.replace(/"/g, '""')}"`,
-        `"${type.replace(/"/g, '""')}"`
+        sanitizeCsvField(date),
+        sanitizeCsvField(name),
+        sanitizeCsvField(timeTaken),
+        sanitizeCsvField(org),
+        sanitizeCsvField(loc),
+        sanitizeCsvField(gender),
+        sanitizeCsvField(dob),
+        sanitizeCsvField(phone),
+        sanitizeCsvField(email),
+        sanitizeCsvField(code),
+        sanitizeCsvField(type)
       ].join(',')
     })
 

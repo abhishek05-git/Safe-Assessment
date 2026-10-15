@@ -47,10 +47,13 @@ const getStartTime = () => {
  * Main assessment screen with 30-minute countdown timer and timeline.
  */
 export default function Test({ questions, onHome, onFinish, user, onLogout }) {
-  const [answers, setAnswers] = useState(() => load('safe_progress', {}))
-  const [index,   setIndex]   = useState(() =>
-    Math.min(load('safe_idx', 0), Math.max(questions.length - 1, 0))
-  )
+  // P0 Item 3: Keep answers in React memory only. Do not persist in browser storage.
+  const [answers, setAnswers] = useState({})
+  const [index,   setIndex]   = useState(0)
+
+  // Submission state (P0 Item 2: offer retry only on server failure)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState(null)
 
   // Timer state
   const [startTime] = useState(getStartTime)
@@ -58,6 +61,12 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
     const elapsed = Date.now() - startTime
     return Math.max(0, TOTAL_TIME_MS - elapsed)
   })
+
+  // Purge any legacy browser storage answers on mount (P0 Item 3)
+  useEffect(() => {
+    localStorage.removeItem('safe_progress')
+    localStorage.removeItem('safe_idx')
+  }, [])
 
   const question  = questions[index]
   const answered  = Object.keys(answers).length
@@ -69,10 +78,23 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
   const answersRef = useRef(answers)
   answersRef.current = answers
 
-  /* ── Finish test with accurate time taken ─────────────────────── */
-  const handleFinishTest = () => {
+  /* ── Finish test with authoritative server submission & retry (P0 Item 2) ── */
+  const handleFinishTest = async () => {
+    if (isSubmitting) return
+    setIsSubmitting(true)
+    setSubmitError(null)
+
     const timeSpentMs = Math.min(TOTAL_TIME_MS, Date.now() - startTime)
-    onFinish(answersRef.current, timeSpentMs)
+    try {
+      const res = await onFinish(answersRef.current, timeSpentMs)
+      if (res && !res.success) {
+        setSubmitError(res.error || 'Server rejected submission or failed to save to Google Sheets.')
+      }
+    } catch (err) {
+      setSubmitError(err.message || 'Submission error. Please retry.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   /* ── 30-Minute Countdown Interval with Milliseconds ──────────── */
@@ -94,20 +116,15 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
 
   /* ── Navigate ─────────────────────────────────────── */
   const navigate = (dir) => {
-    setIndex(i => {
-      const next = Math.max(0, Math.min(questions.length - 1, i + dir))
-      save('safe_idx', next)
-      return next
-    })
+    setIndex(i => Math.max(0, Math.min(questions.length - 1, i + dir)))
   }
 
-  const jumpTo = (i) => { setIndex(i); save('safe_idx', i) }
+  const jumpTo = (i) => { setIndex(i) }
 
-  /* ── Handle answer ────────────────────────────────── */
+  /* ── Handle answer (React memory only - P0 Item 3) ────────────────── */
   const handleAnswer = (value) => {
     const next = { ...answers, [question.id]: value }
     setAnswers(next)
-    save('safe_progress', next)
     if (AUTO_ADVANCE.has(question.type) && !isLast) {
       setTimeout(() => navigate(1), 300)
     }
@@ -208,6 +225,28 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
         <ProgressBar value={answered} max={questions.length} />
       </div>
 
+      {/* ── Submission Error / Retry Alert (P0 Item 2) ── */}
+      {submitError && (
+        <div className="mb-5 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+            <div>
+              <div className="text-sm font-bold text-rose-950">Submission Failed</div>
+              <div className="text-xs text-rose-700">{submitError} Answers remain safely preserved in memory.</div>
+            </div>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={isSubmitting}
+            onClick={handleFinishTest}
+            className="bg-rose-600 hover:bg-rose-700 text-white shrink-0 cursor-pointer"
+          >
+            {isSubmitting ? 'Submitting...' : 'Retry Submission'}
+          </Button>
+        </div>
+      )}
+
       {/* ── Question card (key forces re-mount → fade animation) ── */}
       <div key={question.id} className="glass p-6 md:p-10 fade">
         {/* Meta row */}
@@ -274,11 +313,11 @@ export default function Test({ questions, onHome, onFinish, user, onLogout }) {
               id="finish-btn"
               variant="primary"
               size="md"
-              disabled={missing > 0}
+              disabled={missing > 0 || isSubmitting}
               onClick={handleFinishTest}
-              icon={<CheckCircle className="w-4 h-4" />}
+              icon={isSubmitting ? <Clock className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
             >
-              {missing > 0 ? `${missing} required left` : 'Finish'}
+              {isSubmitting ? 'Submitting...' : missing > 0 ? `${missing} required left` : 'Finish & Submit'}
             </Button>
           ) : (
             <Button

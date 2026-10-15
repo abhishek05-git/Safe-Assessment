@@ -1,26 +1,47 @@
 import crypto from 'crypto'
 
 /**
- * Session service for signing and verifying HttpOnly session cookies.
- * Supports roles: 'participant' and 'admin'.
+ * Session service for signing, verifying, and revoking HttpOnly session cookies.
+ * Implements session IDs/nonces and revocation verification (Item 11).
+ * Default hardcoded secret removed (Item 1).
  */
 
-const DEFAULT_SECRET = 'safe_assessment_dev_secret_key_change_in_production_32chars'
+// In-memory revocation cache: sessionId -> revokedTimestamp
+const revokedSessions = new Map()
+
+// Map user email to set of active sessionIds for targeted revocation upon access revoke
+const userSessions = new Map()
 
 function getSecret() {
-  return process.env.SESSION_SECRET || DEFAULT_SECRET
+  const secret = process.env.SESSION_SECRET
+  if (!secret) {
+    throw new Error('SESSION_SECRET environment variable is missing. Server cannot sign session tokens.')
+  }
+  return secret
 }
 
 /**
- * Create a signed session token.
- * Token format: base64Payload.signature
+ * Create a signed session token with unique session ID (Item 11).
+ * Format: base64Payload.signature
  */
-export function createSessionToken(payload, expiresInMs = 24 * 60 * 60 * 1000) {
+export function createSessionToken(payload, expiresInMs = 4 * 60 * 60 * 1000) {
   const secret = getSecret()
+  const sessionId = crypto.randomUUID()
+
   const fullPayload = {
     ...payload,
+    sessionId,
     createdAt: Date.now(),
     expiresAt: Date.now() + expiresInMs,
+  }
+
+  // Track session for user if email provided
+  if (fullPayload.email) {
+    const cleanEmail = fullPayload.email.trim().toLowerCase()
+    if (!userSessions.has(cleanEmail)) {
+      userSessions.set(cleanEmail, new Set())
+    }
+    userSessions.get(cleanEmail).add(sessionId)
   }
 
   const payloadStr = Buffer.from(JSON.stringify(fullPayload)).toString('base64url')
@@ -33,8 +54,40 @@ export function createSessionToken(payload, expiresInMs = 24 * 60 * 60 * 1000) {
 }
 
 /**
+ * Revoke an active session by its ID
+ */
+export function revokeSession(sessionId) {
+  if (sessionId) {
+    revokedSessions.set(sessionId, Date.now())
+  }
+}
+
+/**
+ * Revoke all sessions associated with an email (e.g. when admin revokes access)
+ */
+export function revokeAllUserSessions(email) {
+  if (!email) return
+  const cleanEmail = email.trim().toLowerCase()
+  const sessions = userSessions.get(cleanEmail)
+  if (sessions) {
+    for (const sid of sessions) {
+      revokeSession(sid)
+    }
+    userSessions.delete(cleanEmail)
+  }
+}
+
+/**
+ * Check if a session ID has been revoked
+ */
+export function isSessionRevoked(sessionId) {
+  if (!sessionId) return true
+  return revokedSessions.has(sessionId)
+}
+
+/**
  * Verify a signed session token.
- * Returns payload if valid and not expired, or null if invalid.
+ * Validates HMAC-SHA256 signature, expiry, and revocation state.
  */
 export function verifySessionToken(token) {
   if (!token || typeof token !== 'string') return null
@@ -58,8 +111,15 @@ export function verifySessionToken(token) {
     }
 
     const payload = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8'))
+    
+    // Check expiry
     if (payload.expiresAt && Date.now() > payload.expiresAt) {
-      return null // Expired
+      return null
+    }
+
+    // Check revocation (Item 11)
+    if (isSessionRevoked(payload.sessionId)) {
+      return null
     }
 
     return payload
@@ -69,9 +129,9 @@ export function verifySessionToken(token) {
 }
 
 /**
- * Helper to get standard secure cookie options.
+ * Standard secure cookie options.
  */
-export function getCookieOptions(maxAgeMs = 24 * 60 * 60 * 1000) {
+export function getCookieOptions(maxAgeMs = 4 * 60 * 60 * 1000) {
   const isProd = process.env.NODE_ENV === 'production'
   return {
     httpOnly: true,

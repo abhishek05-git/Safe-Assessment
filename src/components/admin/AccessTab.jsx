@@ -2,137 +2,6 @@ import React, { useState } from 'react'
 import { CheckCircle2, XCircle, Clock, ShieldCheck, Trash2, Search, CheckCheck, RefreshCw, AlertTriangle, Users } from 'lucide-react'
 import Button from '../ui/Button'
 
-const APPS_SCRIPT_CODE = `function doGet(e) {
-  var action = (e.parameter && e.parameter['Action']) || '';
-  
-  if (action === 'GET_APPROVALS') {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName('Access_Requests');
-    if (!sheet) {
-      sheet = ss.insertSheet('Access_Requests');
-      sheet.appendRow(['Email', 'Name', 'Organization', 'Phone', 'Status', 'RequestedAt', 'ApprovedAt']);
-    }
-    var rows = sheet.getDataRange().getValues();
-    var approvals = {};
-    for (var i = 1; i < rows.length; i++) {
-      var r = rows[i];
-      if (r[0]) {
-        var emailKey = String(r[0]).trim().toLowerCase();
-        approvals[emailKey] = {
-          email: String(r[0]),
-          name: String(r[1] || ''),
-          org: String(r[2] || ''),
-          phone: String(r[3] || ''),
-          status: String(r[4] || 'pending'),
-          requestedAt: r[5] ? String(r[5]) : '',
-          approvedAt: r[6] ? String(r[6]) : ''
-        };
-      }
-    }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: approvals }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  
-  if (action === 'REQUEST_ACCESS') {
-    var email = (e.parameter['Email'] || '').trim().toLowerCase();
-    var name = e.parameter['Name'] || '';
-    var org = e.parameter['Organization'] || '';
-    var phone = e.parameter['Phone'] || '';
-    
-    if (email) {
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      var sheet = ss.getSheetByName('Access_Requests');
-      if (!sheet) {
-        sheet = ss.insertSheet('Access_Requests');
-        sheet.appendRow(['Email', 'Name', 'Organization', 'Phone', 'Status', 'RequestedAt', 'ApprovedAt']);
-      }
-      var rows = sheet.getDataRange().getValues();
-      var found = false;
-      var now = new Date().toISOString();
-      for (var i = 1; i < rows.length; i++) {
-        if (String(rows[i][0]).trim().toLowerCase() === email) {
-          found = true;
-          if (rows[i][4] !== 'approved') {
-            sheet.getRange(i + 1, 2).setValue(name);
-            sheet.getRange(i + 1, 3).setValue(org);
-            sheet.getRange(i + 1, 4).setValue(phone);
-            sheet.getRange(i + 1, 5).setValue('pending');
-            sheet.getRange(i + 1, 6).setValue(now);
-          }
-          break;
-        }
-      }
-      if (!found) {
-        sheet.appendRow([email, name, org, phone, 'pending', now, '']);
-      }
-    }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Requested' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-  
-  if (action === 'SET_APPROVAL') {
-    var email = (e.parameter['Email'] || '').trim().toLowerCase();
-    var newStatus = e.parameter['Status'] || 'approved';
-    
-    if (email) {
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      var sheet = ss.getSheetByName('Access_Requests');
-      if (sheet) {
-        var rows = sheet.getDataRange().getValues();
-        for (var i = 1; i < rows.length; i++) {
-          if (String(rows[i][0]).trim().toLowerCase() === email) {
-            sheet.getRange(i + 1, 5).setValue(newStatus);
-            sheet.getRange(i + 1, 7).setValue(newStatus === 'approved' ? new Date().toISOString() : '');
-            break;
-          }
-        }
-      }
-    }
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', email: email, status: newStatus }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
-  return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'SAFE Assessment Google Apps Script Web App is active and secure.' }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) {
-  var action = (e.parameter && e.parameter['Action']) || '';
-  
-  if (action === 'SEND_OTP') {
-    var email = e.parameter['Email'] || '';
-    var name = e.parameter['Name'] || 'Participant';
-    var otp = e.parameter['OTP'] || '';
-    if (email) {
-      MailApp.sendEmail({
-        to: email,
-        subject: "Your SAFE Ltd. Assessment OTP",
-        htmlBody: "Hello " + name + ",<br><br>Your verification code to start the assessment is: <b>" + otp + "</b><br><br>Thank you!"
-      });
-    }
-    return ContentService.createTextOutput("OTP Sent").setMimeType(ContentService.MimeType.TEXT);
-  }
-
-  if (action === 'SAVE_RESULT') {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName('Results') || ss.getActiveSheet();
-    var date = e.parameter['Date'] || '';
-    var name = e.parameter['Name'] || '';
-    var org = e.parameter['Organization'] || '';
-    var loc = e.parameter['Location'] || '';
-    var gender = e.parameter['Gender'] || '';
-    var dob = e.parameter['DOB'] || '';
-    var phone = e.parameter['Phone'] || '';
-    var email = e.parameter['Email'] || '';
-    var code = e.parameter['Result Code'] || '';
-    var type = e.parameter['Personality Type'] || '';
-    sheet.appendRow([date, name, org, loc, gender, dob, phone, email, code, type]);
-    return ContentService.createTextOutput("Success").setMimeType(ContentService.MimeType.TEXT);
-  }
-
-  return doGet(e);
-}`
-
 /**
  * AccessTab:
  * Admin interface to approve or revoke candidate access to the assessment.
@@ -141,8 +10,6 @@ export default function AccessTab({ approvals = {}, setApprovals }) {
   const [filter, setFilter] = useState('all') // 'all' | 'pending' | 'approved'
   const [search, setSearch] = useState('')
   const [isSyncing, setIsSyncing] = useState(false)
-  const [showSetupGuide, setShowSetupGuide] = useState(false)
-  const [copySuccess, setCopySuccess] = useState(false)
 
   const list = Object.values(approvals || {})
 
@@ -356,13 +223,6 @@ export default function AccessTab({ approvals = {}, setApprovals }) {
             {isSyncing ? 'Refreshing...' : 'Refresh Approvals'}
           </button>
 
-          <button
-            onClick={() => setShowSetupGuide(!showSetupGuide)}
-            className="flex items-center gap-1 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-          >
-            📋 Setup Guide
-          </button>
-
           {pendingCount > 0 && (
             <button
               onClick={handleApproveAllPending}
@@ -373,36 +233,6 @@ export default function AccessTab({ approvals = {}, setApprovals }) {
           )}
         </div>
       </div>
-
-      {/* Collapsible Setup Guide */}
-      {showSetupGuide && (
-        <div className="p-5 bg-sky-50/80 border border-sky-200 rounded-2xl text-left space-y-3 slide-up">
-          <div className="flex justify-between items-center">
-            <h4 className="font-heading font-bold text-sky-950 text-sm flex items-center gap-2">
-              ☁️ How Cross-Device Google Sheets Approval Works
-            </h4>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(APPS_SCRIPT_CODE)
-                setCopySuccess(true)
-                setTimeout(() => setCopySuccess(false), 2500)
-              }}
-              className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
-            >
-              {copySuccess ? '✓ Copied Code!' : 'Copy Apps Script Code'}
-            </button>
-          </div>
-          <p className="text-xs text-sky-900 leading-relaxed">
-            When candidates and admins are on different devices (e.g. deployed on Vercel), they sync in real-time through your connected Google Sheet. 
-            To enable cross-device approval:
-          </p>
-          <ol className="text-xs text-sky-900 list-decimal list-inside space-y-1 bg-white/70 p-3.5 rounded-xl border border-sky-100">
-            <li>Open your Google Sheet &rarr; Click <strong>Extensions</strong> &rarr; <strong>Apps Script</strong>.</li>
-            <li>Replace the code with the updated script (click <strong>Copy Apps Script Code</strong> above).</li>
-            <li>Click <strong>Deploy</strong> &rarr; <strong>Manage deployments</strong> &rarr; Click the <strong>Pencil (Edit)</strong> icon &rarr; Under Version choose <strong>New version</strong> &rarr; Click <strong>Deploy</strong>.</li>
-          </ol>
-        </div>
-      )}
 
       {/* Candidates List Table */}
       {filteredList.length > 0 ? (

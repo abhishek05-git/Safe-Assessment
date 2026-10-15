@@ -5,21 +5,29 @@ import cookieParser from 'cookie-parser'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
+import { validateEnv } from './config/env.js'
 import authRoutes from './routes/auth.js'
 import accessRoutes from './routes/access.js'
 import assessmentRoutes from './routes/assessment.js'
 import adminRoutes from './routes/admin.js'
 import configRoutes from './routes/config.js'
 import { generalRateLimiter } from './middleware/rateLimiter.js'
+import { requireSameOrigin } from './middleware/csrf.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+// 1. Validate security configuration on startup (Item 1)
+validateEnv()
 
 const app = express()
 const PORT = process.env.PORT || 3000
 const HOST = process.env.HOST || '127.0.0.1' // Bind privately to localhost (SEC VPS baseline)
 
-// Security headers with Helmet
+// 2. Proxy-aware configuration for Nginx / Vercel (Item 10)
+app.set('trust proxy', 1)
+
+// 3. Security headers with Helmet
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -40,7 +48,10 @@ app.use(
 app.use(express.json({ limit: '100kb' }))
 app.use(cookieParser(process.env.SESSION_SECRET))
 
-// General API rate limiting
+// 4. Strict Origin / CSRF validation for all state-changing API endpoints (Item 7)
+app.use('/api', requireSameOrigin)
+
+// 5. General API rate limiting (proxy-aware - Item 10)
 app.use('/api', generalRateLimiter)
 
 // Health check endpoint

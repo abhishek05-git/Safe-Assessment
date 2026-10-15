@@ -8,7 +8,6 @@ import crypto from 'crypto'
  * - Timing-safe verification
  */
 
-const DEFAULT_PEPPER = 'safe_assessment_otp_pepper_secret_change_in_production'
 const OTP_EXPIRY_MS = 10 * 60 * 1000 // 10 minutes
 const MAX_ATTEMPTS = 5
 const RESEND_COOLDOWN_MS = 45 * 1000 // 45 seconds
@@ -17,7 +16,11 @@ const RESEND_COOLDOWN_MS = 45 * 1000 // 45 seconds
 const challenges = new Map()
 
 function getPepper() {
-  return process.env.OTP_PEPPER || DEFAULT_PEPPER
+  const pepper = process.env.OTP_PEPPER
+  if (!pepper) {
+    throw new Error('OTP_PEPPER environment variable is missing. Server cannot hash OTP codes.')
+  }
+  return pepper
 }
 
 function hashOtp(otp, email) {
