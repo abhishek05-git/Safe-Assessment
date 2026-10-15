@@ -62,19 +62,20 @@ async function callAppsScript(action, params = {}, retryCount = 0) {
     }
 
     const text = await res.text()
+    let json = null
     try {
-      const json = JSON.parse(text)
-      if (json.status === 'error' || json.error) {
-        throw new Error(json.error || json.message || 'Apps Script returned an error status')
-      }
-      return json
+      json = JSON.parse(text)
     } catch (parseErr) {
-      // If response was plain text "Success" / "OTP Sent"
       if (text.includes('Success') || text.includes('OTP Sent')) {
         return { status: 'success', text }
       }
       throw new Error(`Invalid response format from Google Apps Script: ${text.slice(0, 100)}`)
     }
+
+    if (json && (json.status === 'error' || json.error)) {
+      throw new Error(json.error || json.message || 'Apps Script returned an error status')
+    }
+    return json
   } catch (err) {
     clearTimeout(timeoutId)
     if (retryCount === 0 && (err.name === 'AbortError' || err.message.includes('aborted'))) {

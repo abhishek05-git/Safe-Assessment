@@ -66,9 +66,13 @@ router.post('/request-otp', otpRequestRateLimiter, async (req, res) => {
 
     // 2. If not dispatched via SMTP, use Google Apps Script MailApp if configured
     if (!dispatched && process.env.GOOGLE_SCRIPT_URL) {
-      const sendResult = await sendOtpEmail(cleanEmail, cleanName, otp)
-      if (sendResult.success) {
-        dispatched = true
+      try {
+        const sendResult = await sendOtpEmail(cleanEmail, cleanName, otp)
+        if (sendResult.success) {
+          dispatched = true
+        }
+      } catch (gsErr) {
+        console.warn(`[OTP Dispatch Warning] Google Apps Script dispatch failed:`, gsErr.message)
       }
     }
 
