@@ -143,13 +143,26 @@ export async function getParticipantStatus(email) {
       Email: cleanEmail,
     })
 
-    const candidateStatus = String(json.candidateStatus || (json.status !== 'success' ? json.status : 'pending')).toLowerCase()
-    const isApproved = json.approved === true || candidateStatus === 'approved'
+    // Direct response from hardened Apps Script GET_APPROVAL_STATUS (Audit Item 9)
+    if (json.candidateStatus !== undefined || json.approved !== undefined) {
+      const candidateStatus = String(json.candidateStatus || (json.status !== 'success' ? json.status : 'pending')).toLowerCase()
+      const isApproved = json.approved === true || candidateStatus === 'approved'
 
+      return {
+        email: cleanEmail,
+        status: candidateStatus,
+        approved: isApproved,
+      }
+    }
+
+    // Compatibility fallback for active deployments transitioning to hardened script
+    const allApprovals = await fetchAllApprovals()
+    const record = allApprovals && allApprovals[cleanEmail]
+    const candidateStatus = record && record.status ? String(record.status).toLowerCase() : 'pending'
     return {
       email: cleanEmail,
       status: candidateStatus,
-      approved: isApproved,
+      approved: candidateStatus === 'approved',
     }
   } catch (err) {
     if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
