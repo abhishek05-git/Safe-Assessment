@@ -9,13 +9,20 @@
  * 6. Server-side scoring calculation
  */
 
+import 'dotenv/config'
 import http from 'http'
 import bcrypt from 'bcryptjs'
 
-// Setup isolated test environment credentials (P0 Item 1)
-process.env.SESSION_SECRET = 'test_session_secret_for_automated_testing_123456789'
-process.env.OTP_PEPPER = 'test_otp_pepper_for_automated_testing_123456789'
-process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync('admin', 10)
+// Setup test environment credentials if not already loaded from .env (P0 Item 1)
+if (!process.env.SESSION_SECRET) {
+  process.env.SESSION_SECRET = 'test_session_secret_for_automated_testing_123456789'
+}
+if (!process.env.OTP_PEPPER) {
+  process.env.OTP_PEPPER = 'test_otp_pepper_for_automated_testing_123456789'
+}
+if (!process.env.ADMIN_PASSWORD_HASH) {
+  process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync('admin123', 10)
+}
 
 async function runTests() {
   console.log('--- Starting SAFE Assessment Security Controls Automated Test ---')
@@ -81,7 +88,7 @@ async function runTests() {
   const adminRes = await fetch(`${baseUrl}/api/admin/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: 'admin' }) // default dev fallback hash
+    body: JSON.stringify({ password: 'admin123' })
   })
   const setCookie = adminRes.headers.get('set-cookie') || ''
   assert(
@@ -112,10 +119,24 @@ async function runTests() {
 
   // TEST 10: Participant OTP verification issues HttpOnly participant session cookie
   const { generateOtpChallenge } = await import('../services/otpService.js')
+  const { createSessionToken } = await import('../services/sessionService.js')
   const testChallenge = generateOtpChallenge('test.verified@example.com', { Name: 'Verified User', 'Email Id': 'test.verified@example.com' })
+  const validChallengeCookie = createSessionToken(
+    {
+      challenge: true,
+      email: 'test.verified@example.com',
+      hash: testChallenge.hash,
+      expiresAt: testChallenge.expiresAt,
+      userDetails: testChallenge.userDetails,
+    },
+    10 * 60 * 1000
+  )
   const verifyRes = await fetch(`${baseUrl}/api/auth/verify-otp`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: `safe_otp_challenge=${validChallengeCookie}`
+    },
     body: JSON.stringify({ email: 'test.verified@example.com', otp: testChallenge.otp })
   })
   const verifySetCookie = verifyRes.headers.get('set-cookie') || ''

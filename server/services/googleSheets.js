@@ -9,6 +9,9 @@ import { sanitizeForSpreadsheet, sanitizeRecordForSpreadsheet } from '../utils/s
  * - Sanitizes all user inputs against CSV/Spreadsheet formula injection (Item 8).
  */
 
+// In-memory development state for approvals when GOOGLE_SCRIPT_URL is unconfigured
+const devApprovals = new Map()
+
 function getScriptConfig() {
   const url = process.env.GOOGLE_SCRIPT_URL
   const secret = process.env.GOOGLE_SCRIPT_SHARED_SECRET
@@ -121,6 +124,7 @@ export async function requestCandidateAccess(details) {
     return { success: true, status: json.status || 'pending' }
   } catch (err) {
     if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
+      devApprovals.set(cleanEmail, 'pending')
       return { success: true, status: 'pending' }
     }
     throw err // Fail closed (Item 6)
@@ -146,7 +150,8 @@ export async function getParticipantStatus(email) {
     }
   } catch (err) {
     if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
-      return { email: cleanEmail, status: 'pending', approved: false }
+      const devStatus = devApprovals.get(cleanEmail) || 'pending'
+      return { email: cleanEmail, status: devStatus, approved: devStatus === 'approved' }
     }
     throw err // Fail closed (Item 6)
   }
@@ -161,7 +166,11 @@ export async function fetchAllApprovals() {
     return (json && typeof json.data === 'object') ? json.data : {}
   } catch (err) {
     if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
-      return {}
+      const result = {}
+      for (const [em, st] of devApprovals.entries()) {
+        result[em] = { email: em, status: st }
+      }
+      return result
     }
     throw err // Fail closed (Item 6)
   }
@@ -183,6 +192,7 @@ export async function updateCandidateApproval(email, status) {
     return { email: cleanEmail, status: cleanStatus }
   } catch (err) {
     if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
+      devApprovals.set(cleanEmail, cleanStatus)
       return { email: cleanEmail, status: cleanStatus }
     }
     throw err // Fail closed (Item 6)
