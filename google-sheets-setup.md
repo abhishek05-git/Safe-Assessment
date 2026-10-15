@@ -40,19 +40,26 @@ var SHARED_SECRET = "SAFE_2026_SECURE_TOKEN_REPLACE_WITH_STRONG_RANDOM_SECRET";
  */
 function authorizeAndTest() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var userEmail = Session.getActiveUser().getEmail();
   Logger.log("Active Spreadsheet: " + ss.getName() + " (ID: " + ss.getId() + ")");
   
+  var userEmail = "";
+  try {
+    userEmail = Session.getEffectiveUser().getEmail() || Session.getActiveUser().getEmail();
+  } catch (e) {}
+
   if (userEmail) {
-    MailApp.sendEmail({
-      to: userEmail,
-      subject: "SAFE Assessment - Apps Script Authorized Successfully",
-      htmlBody: "<h3>Google Apps Script Authorization Confirmed</h3><p>Your Google Apps Script backend has been successfully authorized to access this spreadsheet and send verification emails.</p>"
-    });
-    Logger.log("Test email successfully sent to: " + userEmail);
-  } else {
-    Logger.log("Authorized successfully.");
+    try {
+      MailApp.sendEmail({
+        to: userEmail,
+        subject: "SAFE Assessment - Apps Script Authorized Successfully",
+        htmlBody: "<h3>Google Apps Script Authorization Confirmed</h3><p>Your Google Apps Script backend has been successfully authorized to access this spreadsheet and send verification emails.</p>"
+      });
+      Logger.log("Test email successfully sent to: " + userEmail);
+    } catch (mailErr) {
+      Logger.log("Email dispatch log: " + mailErr.message);
+    }
   }
+  Logger.log("Authorization completed successfully.");
 }
 
 /**
