@@ -1,6 +1,7 @@
 import express from 'express'
 import { generateOtpChallenge, verifyOtp } from '../services/otpService.js'
 import { sendOtpEmail } from '../services/googleSheets.js'
+import { isSmtpConfigured, sendOtpEmailDirect } from '../services/emailService.js'
 import { createSessionToken, getCookieOptions, verifySessionToken, revokeSession } from '../services/sessionService.js'
 import { otpRequestRateLimiter, otpVerifyRateLimiter } from '../middleware/rateLimiter.js'
 import { validateParticipantDetails } from '../middleware/validation.js'
@@ -9,7 +10,7 @@ const router = express.Router()
 
 /**
  * POST /api/auth/request-otp
- * Generates OTP and sends via Apps Script email.
+ * Generates OTP and sends via SMTP or Apps Script email.
  * OTP is never returned to the caller (SEC 01).
  * Validates inputs server-side (Item 8).
  */
@@ -50,14 +51,34 @@ router.post('/request-otp', otpRequestRateLimiter, async (req, res) => {
 
     res.cookie('safe_otp_challenge', challengeToken, getCookieOptions(10 * 60 * 1000))
 
-    // Send email via Apps Script integration (fail closed - Item 6)
-    const sendResult = await sendOtpEmail(cleanEmail, cleanName, otp)
-    if (!sendResult.success && process.env.NODE_ENV === 'production') {
-      return res.status(502).json({ error: 'Failed to dispatch verification email. Please try again later.' })
+    // 1. If direct SMTP is configured (Hostinger / Gmail / Custom SMTP), dispatch directly
+    let dispatched = false
+    if (isSmtpConfigured()) {
+      try {
+        const smtpResult = await sendOtpEmailDirect(cleanEmail, cleanName, otp)
+        if (smtpResult.success) {
+          dispatched = true
+        }
+      } catch (smtpErr) {
+        console.error('[SMTP Send Error]:', smtpErr.message)
+      }
     }
 
-    // In local dev without Google Sheets URL configured, log notice
-    if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
+    // 2. If not dispatched via SMTP, use Google Apps Script MailApp if configured
+    if (!dispatched && process.env.GOOGLE_SCRIPT_URL) {
+      const sendResult = await sendOtpEmail(cleanEmail, cleanName, otp)
+      if (sendResult.success) {
+        dispatched = true
+      }
+    }
+
+    // In production, fail closed if email could not be dispatched (Item 6)
+    if (!dispatched && process.env.NODE_ENV === 'production') {
+      return res.status(502).json({ error: 'Failed to dispatch verification email. Please check mail service configuration.' })
+    }
+
+    // In local dev without configured mail transport, log notification for testing
+    if (!dispatched) {
       console.log(`[DEV OTP NOTIFICATION] Code for ${cleanEmail}: ${otp}`)
     }
 
