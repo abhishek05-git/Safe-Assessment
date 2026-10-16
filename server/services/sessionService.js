@@ -131,11 +131,16 @@ export function verifySessionToken(token) {
 /**
  * Standard secure cookie options.
  */
-export function getCookieOptions(maxAgeMs = 4 * 60 * 60 * 1000) {
+export function getCookieOptions(maxAgeMs = 4 * 60 * 60 * 1000, req = null) {
   const isProd = process.env.NODE_ENV === 'production'
+  const isHttps = req ? (req.secure || req.headers?.['x-forwarded-proto'] === 'https') : false
+  const isLocal = req?.headers?.host?.includes('localhost') || req?.headers?.host?.includes('127.0.0.1')
+  // Don't set secure: true if client is connecting over plain HTTP on localhost/127.0.0.1
+  const secure = isProd ? (isHttps || !isLocal) : false
+
   return {
     httpOnly: true,
-    secure: isProd, // Set to true in production (HTTPS)
+    secure,
     sameSite: 'lax',
     path: '/',
     maxAge: maxAgeMs,

@@ -37,11 +37,15 @@ router.post('/login', adminLoginRateLimiter, async (req, res) => {
     2 * 60 * 60 * 1000 // 2 hours admin session
   )
 
-  res.cookie('safe_admin_session', sessionToken, getCookieOptions(2 * 60 * 60 * 1000))
+  res.cookie('safe_admin_session', sessionToken, getCookieOptions(2 * 60 * 60 * 1000, req))
 
   console.log(`[AUDIT] Successful admin login from ${req.ip} at ${new Date().toISOString()}`)
 
-  return res.json({ success: true, message: 'Admin authenticated.' })
+  return res.json({
+    success: true,
+    message: 'Admin authenticated.',
+    token: sessionToken,
+  })
 })
 
 /**
@@ -49,7 +53,9 @@ router.post('/login', adminLoginRateLimiter, async (req, res) => {
  * Verifies current admin session
  */
 router.get('/check', (req, res) => {
-  const token = req.cookies?.safe_admin_session
+  const authHeader = req.headers?.authorization
+  const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+  const token = req.cookies?.safe_admin_session || req.signedCookies?.safe_admin_session || bearerToken
   const session = verifySessionToken(token)
 
   if (!session || session.role !== 'admin') {
@@ -64,7 +70,9 @@ router.get('/check', (req, res) => {
  * Clears and actively revokes admin session cookie (Item 11)
  */
 router.post('/logout', (req, res) => {
-  const token = req.cookies?.safe_admin_session
+  const authHeader = req.headers?.authorization
+  const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+  const token = req.cookies?.safe_admin_session || req.signedCookies?.safe_admin_session || bearerToken
   const session = verifySessionToken(token)
   if (session?.sessionId) {
     revokeSession(session.sessionId)

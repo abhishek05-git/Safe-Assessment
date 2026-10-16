@@ -23,10 +23,12 @@ export function requireParticipantAuth(req, res, next) {
  * Middleware ensuring request is from an authenticated administrator
  */
 export function requireAdminAuth(req, res, next) {
-  const token = req.cookies?.safe_admin_session
+  const authHeader = req.headers?.authorization
+  const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+  const token = req.cookies?.safe_admin_session || req.signedCookies?.safe_admin_session || bearerToken
 
   if (!token) {
-    if (req.cookies?.safe_user_session) {
+    if (req.cookies?.safe_user_session || req.signedCookies?.safe_user_session) {
       return res.status(403).json({ error: 'Forbidden: Admin authorization required.' })
     }
     return res.status(401).json({ error: 'Admin authentication required.' })

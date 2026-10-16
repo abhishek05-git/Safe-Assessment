@@ -30,6 +30,16 @@ export default function Admin({
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState(null) // null | 'success' | 'error'
 
+  const getAdminHeaders = (extra = {}) => {
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('safe_admin_token') : null
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...extra,
+    }
+  }
+
   const handleSaveChanges = async () => {
     setIsSaving(true)
     setSaveStatus(null)
@@ -38,7 +48,7 @@ export default function Admin({
     try {
       const res = await fetch('/api/admin/config', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAdminHeaders(),
         credentials: 'include',
         body: JSON.stringify({
           questions,
@@ -58,6 +68,11 @@ export default function Admin({
         save('safe_settings', settings)
         setSaveStatus('success')
         setTimeout(() => setSaveStatus(null), 2500)
+      } else if (res.status === 401 || (data.error && data.error.includes('Admin authentication required'))) {
+        setSaveStatus('error')
+        setIsAuthenticated(false)
+        sessionStorage.removeItem('safe_admin_token')
+        alert(`Failed to save configuration to server: Admin session expired. Please enter your admin password to log in again (your edits are preserved in memory).`)
       } else {
         setSaveStatus('error')
         alert(`Failed to save configuration to server: ${data.error || 'Server rejected changes'}`)
@@ -79,15 +94,21 @@ export default function Admin({
       try {
         const res = await fetch('/api/admin/check', {
           credentials: 'include',
-          headers: { 'Accept': 'application/json' }
+          headers: getAdminHeaders(),
         })
         if (res.ok) {
           const json = await res.json()
           if (isMounted && json && json.authenticated) {
             setIsAuthenticated(true)
+          } else {
+            setIsAuthenticated(false)
           }
+        } else {
+          setIsAuthenticated(false)
         }
-      } catch (e) {}
+      } catch (e) {
+        setIsAuthenticated(false)
+      }
       if (isMounted) setLoadingCheck(false)
     }
     checkSession()
@@ -100,7 +121,7 @@ export default function Admin({
     let isMounted = true
     fetch('/api/admin/approvals', {
       credentials: 'include',
-      headers: { 'Accept': 'application/json' }
+      headers: getAdminHeaders(),
     })
       .then(res => res.json())
       .then(json => {
@@ -125,6 +146,9 @@ export default function Admin({
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.success) {
+        if (data.token) {
+          sessionStorage.setItem('safe_admin_token', data.token)
+        }
         setIsAuthenticated(true)
         setPassword('')
       } else {
@@ -141,9 +165,11 @@ export default function Admin({
     try {
       await fetch('/api/admin/logout', {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
+        headers: getAdminHeaders(),
       })
     } catch (e) {}
+    sessionStorage.removeItem('safe_admin_token')
     setIsAuthenticated(false)
     onExit()
   }
