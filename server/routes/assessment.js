@@ -1,6 +1,6 @@
 import express from 'express'
 import { requireParticipantAuth } from '../middleware/auth.js'
-import { getParticipantStatus, saveAssessmentResult } from '../services/googleSheets.js'
+import { getParticipantStatus, saveAssessmentResult, clearParticipantRetake } from '../services/googleSheets.js'
 import { score } from '../../src/engine/scoring.js'
 import { getAuthoritativeQuestions, getAuthoritativeDimensions, getAuthoritativeSettings } from '../services/configService.js'
 
@@ -59,6 +59,9 @@ router.post('/submit', requireParticipantAuth, async (req, res) => {
 
     // Persist to Google Sheets server-to-server (Fail closed: returns error if Sheets fails - Item 6)
     await saveAssessmentResult(userDetails, scored, formattedTime)
+
+    // Clear any active retake flag for this participant
+    clearParticipantRetake(req.user.email)
 
     return res.json({
       success: true,

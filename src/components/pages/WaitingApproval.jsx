@@ -73,6 +73,12 @@ export default function WaitingApproval({ user, onHome, onStartTest, onLogout })
   const handleStartAssessment = async () => {
     setChecking(true)
     try {
+      // Clear any prior local test markers to ensure clean 30-minute countdown
+      localStorage.removeItem('safe_progress')
+      localStorage.removeItem('safe_idx')
+      localStorage.removeItem('safe_timer_start')
+      localStorage.removeItem('safe_result')
+
       const res = await fetch('/api/access/status', {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }

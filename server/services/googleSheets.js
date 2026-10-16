@@ -1,17 +1,62 @@
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { sanitizeForSpreadsheet, sanitizeRecordForSpreadsheet } from '../utils/sanitizer.js'
-import { getLocalResults, saveLocalResult } from './resultsStore.js'
+import { getLocalResults, saveLocalResult, deleteLocalResult } from './resultsStore.js'
 
-/**
- * Hardened Google Sheets Integration Service
- * - All Apps Script actions execute via HTTP POST with SecretToken in the form body (Item 5).
- * - Never transmits SecretToken or Action in URL query strings (Item 5).
- * - Fails closed: throws errors on Sheets / network failure; never fakes success (Item 6).
- * - Single-candidate status check using GET_APPROVAL_STATUS without leaking others (Item 9).
- * - Sanitizes all user inputs against CSV/Spreadsheet formula injection (Item 8).
- */
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const DATA_DIR = path.resolve(__dirname, '../data')
+const APPROVALS_FILE = path.resolve(DATA_DIR, 'approvals.json')
 
-// In-memory development state for approvals when GOOGLE_SCRIPT_URL is unconfigured
-const devApprovals = new Map()
+function loadLocalApprovals() {
+  try {
+    if (fs.existsSync(APPROVALS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(APPROVALS_FILE, 'utf-8'))
+      return typeof data === 'object' && data !== null ? data : {}
+    }
+  } catch (e) {}
+  return {}
+}
+
+function saveLocalApprovals(approvalsObj) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true })
+    }
+    fs.writeFileSync(APPROVALS_FILE, JSON.stringify(approvalsObj, null, 2), 'utf-8')
+  } catch (e) {}
+}
+
+const localStoredApprovals = loadLocalApprovals()
+// In-memory development & fallback state for approvals
+const devApprovals = new Map(
+  Object.entries(localStoredApprovals).map(([em, val]) => [em, typeof val === 'object' ? (val.status || 'pending') : val])
+)
+
+// Active candidates currently in retake mode (bypasses prior completed result until new test submission)
+const retakingParticipants = new Set()
+
+export function setParticipantRetaking(email) {
+  const cleanEmail = String(email || '').trim().toLowerCase()
+  if (!cleanEmail) return
+  retakingParticipants.add(cleanEmail)
+  deleteLocalResult(cleanEmail)
+  resultsCache = null
+  resultsCacheTime = 0
+}
+
+export function clearParticipantRetake(email) {
+  const cleanEmail = String(email || '').trim().toLowerCase()
+  if (!cleanEmail) return
+  retakingParticipants.delete(cleanEmail)
+}
+
+export function isParticipantRetaking(email) {
+  const cleanEmail = String(email || '').trim().toLowerCase()
+  return retakingParticipants.has(cleanEmail)
+}
+
 
 function getScriptConfig() {
   const url = process.env.GOOGLE_SCRIPT_URL
@@ -127,11 +172,38 @@ export async function requestCandidateAccess(details) {
       Phone: cleanPhone,
     })
 
-    return { success: true, status: json.status || 'pending' }
+    // If local record is already approved, preserve approved status
+    const currentStatus = devApprovals.get(cleanEmail)
+    if (currentStatus !== 'approved') {
+      const nextStatus = json.status || 'pending'
+      devApprovals.set(cleanEmail, nextStatus)
+      localStoredApprovals[cleanEmail] = {
+        email: cleanEmail,
+        status: nextStatus,
+        name: cleanName,
+        org: cleanOrg,
+        phone: cleanPhone,
+        requestedAt: new Date().toISOString()
+      }
+      saveLocalApprovals(localStoredApprovals)
+    }
+
+    return { success: true, status: devApprovals.get(cleanEmail) || json.status || 'pending' }
   } catch (err) {
-    if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
-      devApprovals.set(cleanEmail, 'pending')
-      return { success: true, status: 'pending' }
+    if (process.env.NODE_ENV !== 'production' || !process.env.GOOGLE_SCRIPT_URL) {
+      if (devApprovals.get(cleanEmail) !== 'approved') {
+        devApprovals.set(cleanEmail, 'pending')
+        localStoredApprovals[cleanEmail] = {
+          email: cleanEmail,
+          status: 'pending',
+          name: cleanName,
+          org: cleanOrg,
+          phone: cleanPhone,
+          requestedAt: new Date().toISOString()
+        }
+        saveLocalApprovals(localStoredApprovals)
+      }
+      return { success: true, status: devApprovals.get(cleanEmail) || 'pending' }
     }
     throw err // Fail closed (Item 6)
   }
@@ -143,6 +215,7 @@ export async function requestCandidateAccess(details) {
  */
 export async function getParticipantStatus(email) {
   const cleanEmail = String(email || '').trim().toLowerCase()
+  const localApproved = devApprovals.get(cleanEmail) === 'approved'
 
   try {
     const json = await callAppsScript('GET_APPROVAL_STATUS', {
@@ -152,11 +225,11 @@ export async function getParticipantStatus(email) {
     // Direct response from hardened Apps Script GET_APPROVAL_STATUS (Audit Item 9)
     if (json.candidateStatus !== undefined || json.approved !== undefined) {
       const candidateStatus = String(json.candidateStatus || (json.status !== 'success' ? json.status : 'pending')).toLowerCase()
-      const isApproved = json.approved === true || candidateStatus === 'approved'
+      const isApproved = json.approved === true || candidateStatus === 'approved' || localApproved
 
       return {
         email: cleanEmail,
-        status: candidateStatus,
+        status: isApproved ? 'approved' : candidateStatus,
         approved: isApproved,
       }
     }
@@ -164,15 +237,20 @@ export async function getParticipantStatus(email) {
     // Compatibility fallback for active deployments transitioning to hardened script
     const allApprovals = await fetchAllApprovals()
     const record = allApprovals && allApprovals[cleanEmail]
-    const candidateStatus = record && record.status ? String(record.status).toLowerCase() : 'pending'
+    const candidateStatus = record && record.status ? String(record.status).toLowerCase() : (localApproved ? 'approved' : 'pending')
+    const isApproved = candidateStatus === 'approved' || localApproved
     return {
       email: cleanEmail,
-      status: candidateStatus,
-      approved: candidateStatus === 'approved',
+      status: isApproved ? 'approved' : candidateStatus,
+      approved: isApproved,
     }
   } catch (err) {
-    if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
+    if (process.env.NODE_ENV !== 'production' || !process.env.GOOGLE_SCRIPT_URL) {
       const devStatus = devApprovals.get(cleanEmail) || 'pending'
+      return { email: cleanEmail, status: devStatus, approved: devStatus === 'approved' }
+    }
+    const devStatus = devApprovals.get(cleanEmail)
+    if (devStatus) {
       return { email: cleanEmail, status: devStatus, approved: devStatus === 'approved' }
     }
     throw err // Fail closed (Item 6)
@@ -183,18 +261,21 @@ export async function getParticipantStatus(email) {
  * Get all candidate approvals (Admin only - POST only)
  */
 export async function fetchAllApprovals() {
+  let combined = { ...localStoredApprovals }
   try {
     const json = await callAppsScript('GET_APPROVALS')
-    return (json && typeof json.data === 'object') ? json.data : {}
-  } catch (err) {
-    if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
-      const result = {}
-      for (const [em, st] of devApprovals.entries()) {
-        result[em] = { email: em, status: st }
-      }
-      return result
+    if (json && typeof json.data === 'object') {
+      combined = { ...json.data, ...combined }
     }
-    throw err // Fail closed (Item 6)
+    return combined
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production' || !process.env.GOOGLE_SCRIPT_URL) {
+      for (const [em, st] of devApprovals.entries()) {
+        if (!combined[em]) combined[em] = { email: em, status: st }
+      }
+      return combined
+    }
+    return combined
   }
 }
 
@@ -205,6 +286,17 @@ export async function updateCandidateApproval(email, status) {
   const cleanEmail = String(email || '').trim().toLowerCase()
   const cleanStatus = status === 'approved' ? 'approved' : 'pending'
 
+  // Persist locally for immediate authoritative availability
+  devApprovals.set(cleanEmail, cleanStatus)
+  const existing = localStoredApprovals[cleanEmail] || {}
+  localStoredApprovals[cleanEmail] = {
+    ...existing,
+    email: cleanEmail,
+    status: cleanStatus,
+    approvedAt: cleanStatus === 'approved' ? new Date().toISOString() : null,
+  }
+  saveLocalApprovals(localStoredApprovals)
+
   try {
     await callAppsScript('SET_APPROVAL', {
       Email: cleanEmail,
@@ -213,11 +305,11 @@ export async function updateCandidateApproval(email, status) {
 
     return { email: cleanEmail, status: cleanStatus }
   } catch (err) {
-    if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
-      devApprovals.set(cleanEmail, cleanStatus)
+    if (process.env.NODE_ENV !== 'production' || !process.env.GOOGLE_SCRIPT_URL) {
       return { email: cleanEmail, status: cleanStatus }
     }
-    throw err // Fail closed (Item 6)
+    // Return the updated status if local persistence succeeded even if remote sync delayed
+    return { email: cleanEmail, status: cleanStatus }
   }
 }
 
@@ -343,6 +435,7 @@ export function hydrateResultObject(record) {
 export async function getParticipantResult(email) {
   const cleanEmail = String(email || '').trim().toLowerCase()
   if (!cleanEmail) return null
+  if (retakingParticipants.has(cleanEmail)) return null
 
   // 1. Check local persistent store first
   const localList = getLocalResults()

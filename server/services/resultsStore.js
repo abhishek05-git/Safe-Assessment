@@ -48,3 +48,24 @@ export function saveLocalResult(record) {
     return false
   }
 }
+
+export function deleteLocalResult(email) {
+  try {
+    ensureDataDir()
+    const current = getLocalResults()
+    const cleanEmail = String(email || '').trim().toLowerCase()
+    if (!cleanEmail) return false
+
+    const filtered = current.filter(r => {
+      const existingEmail = (r.user?.['Email Id'] || r.user?.['Email'] || '').trim().toLowerCase()
+      return existingEmail !== cleanEmail
+    })
+
+    fs.writeFileSync(RESULTS_FILE, JSON.stringify(filtered, null, 2), 'utf-8')
+    return true
+  } catch (err) {
+    console.error('[ResultsStore Delete Error]:', err.message)
+    return false
+  }
+}
+

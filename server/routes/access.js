@@ -1,10 +1,29 @@
 import express from 'express'
 import { requireParticipantAuth } from '../middleware/auth.js'
-import { requestCandidateAccess, getParticipantStatus, getParticipantResult } from '../services/googleSheets.js'
+import { requestCandidateAccess, getParticipantStatus, getParticipantResult, setParticipantRetaking } from '../services/googleSheets.js'
 import { validateParticipantDetails } from '../middleware/validation.js'
 import { getAuthoritativeSettings } from '../services/configService.js'
 
 const router = express.Router()
+
+/**
+ * POST /api/access/retake
+ * Clears completed assessment state for the authenticated participant so they can retake fresh.
+ */
+router.post('/retake', requireParticipantAuth, async (req, res) => {
+  try {
+    setParticipantRetaking(req.user.email)
+    return res.json({
+      success: true,
+      message: 'Participant assessment reset for retake',
+      email: req.user.email,
+    })
+  } catch (err) {
+    console.error('[Access Retake Error]:', err.message)
+    return res.status(500).json({ error: 'Failed to reset assessment for retake.' })
+  }
+})
+
 
 /**
  * POST /api/access/request

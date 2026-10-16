@@ -346,6 +346,14 @@ export default function App() {
     setResult(null)
 
     try {
+      // 1. Notify server to reset completed state and enter retake mode
+      await fetch('/api/access/retake', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' }
+      }).catch(() => {})
+
+      // 2. Authoritatively verify approval status
       const res = await fetch('/api/access/status', {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
