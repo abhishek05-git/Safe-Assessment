@@ -44,8 +44,9 @@ app.use(
   })
 )
 
-// Body parser with size limits
-app.use(express.json({ limit: '100kb' }))
+// Body parser with size limits (supports custom avatar data URIs and configuration)
+app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(cookieParser(process.env.SESSION_SECRET))
 
 // 4. Strict Origin / CSRF validation for all state-changing API endpoints (Item 7)

@@ -1,6 +1,7 @@
 import React, { useRef } from 'react'
-import { Upload, Trash2, Image as ImageIcon, Sparkles, Link as LinkIcon, Check } from 'lucide-react'
+import { Upload, Trash2, Image as ImageIcon, Sparkles, Link as LinkIcon, Check, AlertCircle, Save } from 'lucide-react'
 import { profiles as DEFAULT_PROFILES } from '../../data/config'
+import { save } from '../../hooks/useStore'
 
 const TEXT_FIELDS  = ['name', 'tagline', 'overview', 'color']
 const ARRAY_FIELDS = ['strengths', 'challenges', 'career', 'growth', 'relationships', 'team']
@@ -8,10 +9,14 @@ const ARRAY_FIELDS = ['strengths', 'challenges', 'career', 'growth', 'relationsh
 /**
  * Profiles editor — edit personality profile copy, avatar/illustration image, and colour per 4-letter code.
  * Array fields (strengths, career, etc.) are newline-separated in the textarea.
+ * Edits persist permanently to authoritative server store and client storage.
  */
-export default function ProfilesTab({ profiles, setProfiles }) {
-  const update = (code, field, value) =>
-    setProfiles({ ...profiles, [code]: { ...profiles[code], [field]: value } })
+export default function ProfilesTab({ profiles, setProfiles, onSave, isSaving, saveStatus }) {
+  const update = (code, field, value) => {
+    const updated = { ...profiles, [code]: { ...profiles[code], [field]: value } }
+    setProfiles(updated)
+    save('safe_profiles', updated)
+  }
 
   // Handle client-side image compression and conversion to data URL
   const handleFileUpload = (code, file) => {
@@ -45,7 +50,56 @@ export default function ProfilesTab({ profiles, setProfiles }) {
   }
 
   return (
-    <div className="grid md:grid-cols-2 gap-4">
+    <div>
+      {/* ── Persistent Save Header Banner ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 mb-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
+        <div>
+          <h3 className="font-heading font-bold text-base text-navy flex items-center gap-2">
+            <span>👤 Personality Profiles (16 Types)</span>
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Changes made here are permanently saved to the server and appear on all candidate assessment reports until modified.
+          </p>
+        </div>
+        {onSave && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              id="save-profiles-top-btn"
+              onClick={onSave}
+              disabled={isSaving}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs ${
+                saveStatus === 'success'
+                  ? 'bg-emerald-600 text-white'
+                  : saveStatus === 'error'
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
+              }`}
+            >
+              {saveStatus === 'success' ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>✓ Profiles Saved Permanently!</span>
+                </>
+              ) : saveStatus === 'error' ? (
+                <>
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Error Saving</span>
+                </>
+              ) : isSaving ? (
+                <span>Saving to Cloud...</span>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>Save Profile Changes</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
       {Object.values(profiles).map(p => (
         <details key={p.code} className="border border-slate-200 rounded-2xl overflow-hidden group bg-white shadow-sm">
           <summary className="px-5 py-4 font-heading font-bold cursor-pointer flex items-center gap-3.5 hover:bg-slate-50 transition-colors list-none">
@@ -235,6 +289,48 @@ export default function ProfilesTab({ profiles, setProfiles }) {
           </div>
         </details>
       ))}
+      </div>
+
+      {/* ── Bottom Save Action Bar ── */}
+      {onSave && (
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+          <p className="text-xs text-slate-500">
+            Remember to save your changes so they persist permanently on the server and result reports.
+          </p>
+          <button
+            type="button"
+            id="save-profiles-bottom-btn"
+            onClick={onSave}
+            disabled={isSaving}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs ${
+              saveStatus === 'success'
+                ? 'bg-emerald-600 text-white'
+                : saveStatus === 'error'
+                ? 'bg-rose-600 text-white'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
+            }`}
+          >
+            {saveStatus === 'success' ? (
+              <>
+                <Check className="w-4 h-4" />
+                <span>✓ All Profiles Saved Permanently!</span>
+              </>
+            ) : saveStatus === 'error' ? (
+              <>
+                <AlertCircle className="w-4 h-4" />
+                <span>Error Saving Changes</span>
+              </>
+            ) : isSaving ? (
+              <span>Saving to Cloud...</span>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                <span>Save All Profile Changes</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

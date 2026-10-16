@@ -50,18 +50,22 @@ export default function App() {
     fetch('/api/config')
       .then(r => r.json())
       .then(d => {
-        if (d && d.hasCustomConfig && d.config) {
+        if (d && (d.hasCustomConfig || d.success) && d.config) {
           if (Array.isArray(d.config.questions) && d.config.questions.length > 0) {
             setQs(d.config.questions)
+            save('safe_questions_v11', d.config.questions)
           }
           if (d.config.profiles && typeof d.config.profiles === 'object') {
             setProfiles(d.config.profiles)
+            save('safe_profiles', d.config.profiles)
           }
           if (d.config.sections && typeof d.config.sections === 'object') {
             setSections(d.config.sections)
+            save('safe_sections', d.config.sections)
           }
           if (d.config.settings && typeof d.config.settings === 'object') {
             setSettings(d.config.settings)
+            save('safe_settings', d.config.settings)
           }
         }
       })
@@ -126,13 +130,14 @@ export default function App() {
         if (!updated[code]) {
           updated[code] = def
           changed = true
-        } else if (!updated[code].image && def.image) {
+        } else if (updated[code].image === undefined && def.image) {
           updated[code] = { ...updated[code], image: def.image }
           changed = true
         }
       }
       if (changed) {
         setProfiles(updated)
+        save('safe_profiles', updated)
       }
     }
   }, [])

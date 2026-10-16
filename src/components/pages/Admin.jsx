@@ -299,7 +299,13 @@ export default function Admin({
             <QuestionsTab questions={questions} setQuestions={setQuestions} />
           )}
           {activeTab === 'profiles' && (
-            <ProfilesTab profiles={profiles} setProfiles={setProfiles} />
+            <ProfilesTab
+              profiles={profiles}
+              setProfiles={setProfiles}
+              onSave={handleSaveChanges}
+              isSaving={isSaving}
+              saveStatus={saveStatus}
+            />
           )}
           {activeTab === 'report' && (
             <ReportTab sections={sections} setSections={setSections} />
