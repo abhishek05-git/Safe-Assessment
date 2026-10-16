@@ -1,6 +1,6 @@
 import express from 'express'
 import { requireParticipantAuth } from '../middleware/auth.js'
-import { requestCandidateAccess, getParticipantStatus } from '../services/googleSheets.js'
+import { requestCandidateAccess, getParticipantStatus, getParticipantResult } from '../services/googleSheets.js'
 import { validateParticipantDetails } from '../middleware/validation.js'
 
 const router = express.Router()
@@ -41,17 +41,24 @@ router.post('/request', requireParticipantAuth, async (req, res) => {
 
 /**
  * GET /api/access/status
- * Returns access status for ONLY the authenticated participant (SEC 04 & Item 9)
+ * Returns access status & completed assessment result for ONLY the authenticated participant (SEC 04 & Item 9)
  * Fetches status for a single candidate email without reading full candidate list.
  */
 router.get('/status', requireParticipantAuth, async (req, res) => {
   try {
     const statusResult = await getParticipantStatus(req.user.email)
+    const existingResult = await getParticipantResult(req.user.email)
+
+    const hasCompleted = Boolean(existingResult && existingResult.result)
+
     return res.json({
       success: true,
       email: statusResult.email,
       status: statusResult.status,
       approved: statusResult.approved,
+      hasCompleted,
+      result: hasCompleted ? existingResult.result : null,
+      user: hasCompleted ? existingResult.user : req.user.userDetails,
     })
   } catch (err) {
     console.error('[Access Status Error]:', err.message)

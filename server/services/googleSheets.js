@@ -268,8 +268,11 @@ export async function saveAssessmentResult(user, scoreResult, timeSpent) {
       code: cleanCode,
       type: cleanType,
       timeSpent: cleanTimeSpent,
+      result: scoreResult,
     }
     saveLocalResult(localRecord)
+    resultsCache = null
+    resultsCacheTime = 0
 
     return {
       success: true,
@@ -285,19 +288,118 @@ export async function saveAssessmentResult(user, scoreResult, timeSpent) {
 }
 
 /**
+ * Ensures a result record has a fully populated result object with 5 dimensions
+ */
+export function hydrateResultObject(record) {
+  if (!record) return null
+  const code = (record.code || '').trim().toUpperCase()
+  if (!code || code.length < 4) return null
+
+  if (record.result && Array.isArray(record.result.dims) && record.result.dims.length === 5) {
+    return {
+      ...record.result,
+      code,
+      type: record.type || record.result.type || `${code}-A`,
+      timeSpent: record.timeSpent || record.result.timeSpent || '',
+    }
+  }
+
+  // Synthesize standard 5 dimensions if only summary code was stored
+  const identityPole = (record.type && String(record.type).includes('-T')) ? 'T' : 'A'
+  const winners = [code[0], code[1], code[2], code[3], identityPole]
+  const defaultDims = [
+    { name: 'Energy', poles: ['E', 'I'], labels: { E: 'Extraverted', I: 'Introverted' } },
+    { name: 'Mind', poles: ['S', 'N'], labels: { S: 'Observant', N: 'Intuitive' } },
+    { name: 'Nature', poles: ['T', 'F'], labels: { T: 'Thinking', F: 'Feeling' } },
+    { name: 'Tactics', poles: ['J', 'P'], labels: { J: 'Judging', P: 'Prospecting' } },
+    { name: 'Identity', poles: ['A', 'T'], labels: { A: 'Assertive', T: 'Turbulent' } },
+  ]
+
+  const dims = defaultDims.map((d, idx) => {
+    const winner = winners[idx] || d.poles[0]
+    const loser = d.poles[0] === winner ? d.poles[1] : d.poles[0]
+    return {
+      ...d,
+      winner,
+      pct: {
+        [winner]: 65,
+        [loser]: 35,
+      }
+    }
+  })
+
+  return {
+    code,
+    type: record.type || `${code}-${identityPole}`,
+    id: identityPole,
+    dims,
+    timeSpent: record.timeSpent || '',
+  }
+}
+
+/**
+ * Fetch completed assessment result for a single participant email (Item 9 safe)
+ */
+export async function getParticipantResult(email) {
+  const cleanEmail = String(email || '').trim().toLowerCase()
+  if (!cleanEmail) return null
+
+  // 1. Check local persistent store first
+  const localList = getLocalResults()
+  const localRecord = localList.find(r =>
+    (r.user?.['Email Id'] || r.user?.['Email'] || '').trim().toLowerCase() === cleanEmail
+  )
+  if (localRecord) {
+    return {
+      ...localRecord,
+      result: hydrateResultObject(localRecord)
+    }
+  }
+
+  // 2. Fallback to Google Sheets
+  try {
+    const allResults = await fetchAllResults()
+    const found = allResults.find(r =>
+      (r.user?.['Email Id'] || r.user?.['Email'] || '').trim().toLowerCase() === cleanEmail
+    )
+    if (found) {
+      return {
+        ...found,
+        result: hydrateResultObject(found)
+      }
+    }
+  } catch (err) {}
+
+  return null
+}
+
+// In-memory cache for Google Sheets results to prevent polling latency
+let resultsCache = null
+let resultsCacheTime = 0
+
+/**
  * Fetch results for Admin dashboard (Admin only - POST only)
  */
-export async function fetchAllResults() {
+export async function fetchAllResults(forceFresh = false) {
+  const now = Date.now()
+  if (!forceFresh && resultsCache && (now - resultsCacheTime < 30000)) {
+    return resultsCache
+  }
   try {
     const json = await callAppsScript('GET_RESULTS')
     if (json && Array.isArray(json.data) && json.data.length > 0) {
+      resultsCache = json.data
+      resultsCacheTime = now
       return json.data
     }
-    return getLocalResults()
+    const local = getLocalResults()
+    resultsCache = local
+    resultsCacheTime = now
+    return local
   } catch (err) {
-    if (process.env.NODE_ENV !== 'production' && !process.env.GOOGLE_SCRIPT_URL) {
-      return getLocalResults()
-    }
-    return getLocalResults()
+    const local = getLocalResults()
+    resultsCache = local
+    resultsCacheTime = now
+    return local
   }
 }

@@ -63,7 +63,11 @@ export default function Test({ questions, onHome, onAccessDenied, onFinish, user
         })
         const data = await res.json().catch(() => ({}))
         if (isMounted) {
-          if (res.ok && data && data.approved === true) {
+          if (res.ok && data && data.hasCompleted) {
+            setAccessVerified(false)
+            if (onAccessDenied) onAccessDenied()
+            else onHome()
+          } else if (res.ok && data && data.approved === true) {
             setAccessVerified(true)
           } else {
             setAccessVerified(false)

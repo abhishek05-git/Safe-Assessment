@@ -76,9 +76,22 @@ export default function App() {
       headers: { 'Accept': 'application/json' }
     })
       .then(res => res.json())
-      .then(data => {
+      .then(async data => {
         if (isMounted && data.authenticated && data.user) {
           setUser(prev => ({ ...prev, ...data.user }))
+
+          // Also check if this returning candidate already completed the assessment
+          try {
+            const stRes = await fetch('/api/access/status', {
+              credentials: 'include',
+              headers: { 'Accept': 'application/json' }
+            })
+            const stData = await stRes.json().catch(() => ({}))
+            if (isMounted && stData && stData.hasCompleted && stData.result) {
+              setResult(stData.result)
+              save('safe_result', stData.result)
+            }
+          } catch (e) {}
         }
       })
       .catch(() => {})
@@ -185,12 +198,24 @@ export default function App() {
         credentials: 'include'
       })
 
-      // 2. Fetch session owner access status (SEC 04)
+      // 2. Fetch session owner access status & completed assessment result (SEC 04)
       const res = await fetch('/api/access/status', {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       })
       const statusData = await res.json().catch(() => ({}))
+
+      // If returning candidate already completed the assessment, restore their result and show report
+      if (statusData && statusData.hasCompleted && statusData.result) {
+        setResult(statusData.result)
+        save('safe_result', statusData.result)
+        if (statusData.user) {
+          setUser(statusData.user)
+          save('safe_user', statusData.user)
+        }
+        setView('result')
+        return
+      }
 
       // Strictly wait for admin approval — never open test automatically unless confirmed approved by server
       if (statusData && statusData.approved === true) {
@@ -218,6 +243,19 @@ export default function App() {
           headers: { 'Accept': 'application/json' }
         })
         const data = await res.json().catch(() => ({}))
+
+        // If returning candidate already completed assessment, restore their report
+        if (data && data.hasCompleted && data.result) {
+          setResult(data.result)
+          save('safe_result', data.result)
+          if (data.user) {
+            setUser(data.user)
+            save('safe_user', data.user)
+          }
+          setView('result')
+          return
+        }
+
         // Strictly require server confirmation of approved === true
         if (data && data.approved === true) {
           setView('test')
