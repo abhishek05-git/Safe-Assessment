@@ -2,6 +2,7 @@ import express from 'express'
 import { requireParticipantAuth } from '../middleware/auth.js'
 import { requestCandidateAccess, getParticipantStatus, getParticipantResult } from '../services/googleSheets.js'
 import { validateParticipantDetails } from '../middleware/validation.js'
+import { getAuthoritativeSettings } from '../services/configService.js'
 
 const router = express.Router()
 
@@ -48,14 +49,17 @@ router.get('/status', requireParticipantAuth, async (req, res) => {
   try {
     const statusResult = await getParticipantStatus(req.user.email)
     const existingResult = await getParticipantResult(req.user.email)
+    const settings = getAuthoritativeSettings()
+    const requireApproval = settings?.requireApproval !== false
 
     const hasCompleted = Boolean(existingResult && existingResult.result)
+    const approved = requireApproval ? statusResult.approved : true
 
     return res.json({
       success: true,
       email: statusResult.email,
-      status: statusResult.status,
-      approved: statusResult.approved,
+      status: requireApproval ? statusResult.status : 'approved',
+      approved,
       hasCompleted,
       result: hasCompleted ? existingResult.result : null,
       user: hasCompleted ? existingResult.user : req.user.userDetails,

@@ -322,7 +322,13 @@ export default function Admin({
             />
           )}
           {activeTab === 'questions' && (
-            <QuestionsTab questions={questions} setQuestions={setQuestions} />
+            <QuestionsTab
+              questions={questions}
+              setQuestions={setQuestions}
+              onSave={handleSaveChanges}
+              isSaving={isSaving}
+              saveStatus={saveStatus}
+            />
           )}
           {activeTab === 'profiles' && (
             <ProfilesTab
@@ -334,10 +340,22 @@ export default function Admin({
             />
           )}
           {activeTab === 'report' && (
-            <ReportTab sections={sections} setSections={setSections} />
+            <ReportTab
+              sections={sections}
+              setSections={setSections}
+              onSave={handleSaveChanges}
+              isSaving={isSaving}
+              saveStatus={saveStatus}
+            />
           )}
           {activeTab === 'settings' && (
-            <SettingsTab settings={settings} setSettings={setSettings} />
+            <SettingsTab
+              settings={settings}
+              setSettings={setSettings}
+              onSave={handleSaveChanges}
+              isSaving={isSaving}
+              saveStatus={saveStatus}
+            />
           )}
         </div>
       </div>

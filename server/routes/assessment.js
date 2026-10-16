@@ -2,7 +2,7 @@ import express from 'express'
 import { requireParticipantAuth } from '../middleware/auth.js'
 import { getParticipantStatus, saveAssessmentResult } from '../services/googleSheets.js'
 import { score } from '../../src/engine/scoring.js'
-import { getAuthoritativeQuestions, getAuthoritativeDimensions } from '../services/configService.js'
+import { getAuthoritativeQuestions, getAuthoritativeDimensions, getAuthoritativeSettings } from '../services/configService.js'
 
 const router = express.Router()
 
@@ -19,10 +19,14 @@ router.post('/submit', requireParticipantAuth, async (req, res) => {
       return res.status(400).json({ error: 'Assessment answers are required.' })
     }
 
-    // Verify candidate is approved (Fail closed - Item 6)
-    const status = await getParticipantStatus(req.user.email)
-    if (!status.approved) {
-      return res.status(403).json({ error: 'Assessment submission rejected: Access approval is required.' })
+    // Verify candidate is approved if requireApproval is enabled (Fail closed - Item 6)
+    const settings = getAuthoritativeSettings()
+    const requireApproval = settings?.requireApproval !== false
+    if (requireApproval) {
+      const status = await getParticipantStatus(req.user.email)
+      if (!status.approved) {
+        return res.status(403).json({ error: 'Assessment submission rejected: Access approval is required.' })
+      }
     }
 
     // Load authoritative questions and dimensions (Item 13)

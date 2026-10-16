@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
-import { Plus, Copy, Trash2, GripVertical, Eye, EyeOff } from 'lucide-react'
+import { Plus, Copy, Trash2, GripVertical, Eye, EyeOff, Check, AlertCircle, Save } from 'lucide-react'
 import Button            from '../ui/Button'
 import QuestionRenderer  from '../questions/QuestionRenderer'
 import { QUESTION_TYPES } from '../questions/QuestionRenderer'
+import { save }           from '../../hooks/useStore'
 
 const CATEGORIES = ['Energy', 'Mind', 'Nature', 'Tactics', 'Identity']
 
@@ -29,8 +30,9 @@ const TYPE_LABEL = Object.fromEntries(QUESTION_TYPES.map(t => [t.value, t.label]
  * - Per-field form controls (text, type, category, weight, active, required)
  * - Raw JSON editor (advanced)
  * - Live preview
+ * - Authoritative cloud and local storage persistence
  */
-export default function QuestionsTab({ questions, setQuestions }) {
+export default function QuestionsTab({ questions, setQuestions, onSave, isSaving, saveStatus }) {
   const [selectedId, setSelectedId] = useState(null)
   const [showPreview, setShowPreview] = useState(false)
   const [showJson, setShowJson] = useState(false)
@@ -38,12 +40,20 @@ export default function QuestionsTab({ questions, setQuestions }) {
 
   const selected = questions.find(q => q.id === selectedId)
 
-  const update = (patch) =>
-    setQuestions(questions.map(q => q.id === selectedId ? { ...q, ...patch } : q))
+  const updateQuestions = (next) => {
+    setQuestions(next)
+    save('safe_questions_v11', next)
+  }
+
+  const update = (patch) => {
+    const updated = questions.map(q => q.id === selectedId ? { ...q, ...patch } : q)
+    updateQuestions(updated)
+  }
 
   const addQuestion = () => {
     const q = makeNewQuestion(questions)
-    setQuestions([...questions, q])
+    const updated = [...questions, q]
+    updateQuestions(updated)
     setSelectedId(q.id)
     setShowPreview(false)
   }
@@ -52,19 +62,70 @@ export default function QuestionsTab({ questions, setQuestions }) {
     if (!selected) return
     const id = 'Q' + String(questions.length + 1).padStart(3, '0')
     const copy = { ...selected, id }
-    setQuestions([...questions, copy])
+    const updated = [...questions, copy]
+    updateQuestions(updated)
     setSelectedId(id)
   }
 
   const remove = () => {
-    setQuestions(questions.filter(q => q.id !== selectedId))
+    const updated = questions.filter(q => q.id !== selectedId)
+    updateQuestions(updated)
     setSelectedId(null)
   }
 
   return (
-    <div className="grid md:grid-cols-5 gap-5 min-h-[600px]">
-      {/* ── Left: list ── */}
-      <div className="md:col-span-2 flex flex-col gap-2">
+    <div>
+      {/* ── Persistent Save Header Banner ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 mb-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
+        <div>
+          <h3 className="font-heading font-bold text-base text-navy flex items-center gap-2">
+            <span>❓ Assessment Questions ({questions.length} total, {questions.filter(q => q.active).length} active)</span>
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Changes to questions, weights, and scoring rules are saved permanently to the server and used authoritatively for scoring.
+          </p>
+        </div>
+        {onSave && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              id="save-questions-top-btn"
+              onClick={onSave}
+              disabled={isSaving}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs ${
+                saveStatus === 'success'
+                  ? 'bg-emerald-600 text-white'
+                  : saveStatus === 'error'
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
+              }`}
+            >
+              {saveStatus === 'success' ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>✓ Questions Saved Permanently!</span>
+                </>
+              ) : saveStatus === 'error' ? (
+                <>
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Error Saving</span>
+                </>
+              ) : isSaving ? (
+                <span>Saving to Cloud...</span>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>Save Question Changes</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="grid md:grid-cols-5 gap-5 min-h-[600px]">
+        {/* ── Left: list ── */}
+        <div className="md:col-span-2 flex flex-col gap-2">
         <Button
           id="add-question-btn"
           variant="primary"
@@ -339,5 +400,47 @@ export default function QuestionsTab({ questions, setQuestions }) {
         )}
       </div>
     </div>
+
+    {/* ── Bottom Save Action Bar ── */}
+    {onSave && (
+      <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+        <p className="text-xs text-slate-500">
+          Remember to save your changes to questions so they persist permanently to the server database.
+        </p>
+        <button
+          type="button"
+          id="save-questions-bottom-btn"
+          onClick={onSave}
+          disabled={isSaving}
+          className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs ${
+            saveStatus === 'success'
+              ? 'bg-emerald-600 text-white'
+              : saveStatus === 'error'
+              ? 'bg-rose-600 text-white'
+              : 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95'
+          }`}
+        >
+          {saveStatus === 'success' ? (
+            <>
+              <Check className="w-4 h-4" />
+              <span>✓ All Questions Saved Permanently!</span>
+            </>
+          ) : saveStatus === 'error' ? (
+            <>
+              <AlertCircle className="w-4 h-4" />
+              <span>Error Saving Changes</span>
+            </>
+          ) : isSaving ? (
+            <span>Saving to Cloud...</span>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              <span>Save All Question Changes</span>
+            </>
+          )}
+        </button>
+      </div>
+    )}
+  </div>
   )
 }
