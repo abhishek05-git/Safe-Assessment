@@ -175,7 +175,7 @@ export async function requestCandidateAccess(details) {
     // If local record is already approved, preserve approved status
     const currentStatus = devApprovals.get(cleanEmail)
     if (currentStatus !== 'approved') {
-      const nextStatus = json.status || 'pending'
+      const nextStatus = json.candidateStatus || (json.status === 'approved' ? 'approved' : 'pending')
       devApprovals.set(cleanEmail, nextStatus)
       localStoredApprovals[cleanEmail] = {
         email: cleanEmail,
@@ -188,7 +188,7 @@ export async function requestCandidateAccess(details) {
       saveLocalApprovals(localStoredApprovals)
     }
 
-    return { success: true, status: devApprovals.get(cleanEmail) || json.status || 'pending' }
+    return { success: true, status: devApprovals.get(cleanEmail) || json.candidateStatus || 'pending' }
   } catch (err) {
     if (process.env.NODE_ENV !== 'production' || !process.env.GOOGLE_SCRIPT_URL) {
       if (devApprovals.get(cleanEmail) !== 'approved') {

@@ -39,8 +39,16 @@ export function generateOtpChallenge(email, userDetails = {}) {
   const cleanEmail = email.trim().toLowerCase()
   const existing = challenges.get(cleanEmail)
 
-  // Enforce resend cooldown
+  // Enforce resend cooldown (in development, reuse active challenge to avoid blocking testing)
   if (existing && Date.now() - existing.lastSentAt < RESEND_COOLDOWN_MS) {
+    if (process.env.NODE_ENV !== 'production' && existing.otp) {
+      return {
+        otp: existing.otp,
+        expiresAt: existing.expiresAt,
+        hash: existing.hash,
+        userDetails: existing.userDetails,
+      }
+    }
     const waitSec = Math.ceil((RESEND_COOLDOWN_MS - (Date.now() - existing.lastSentAt)) / 1000)
     throw new Error(`Please wait ${waitSec} seconds before requesting a new code.`)
   }
@@ -57,6 +65,7 @@ export function generateOtpChallenge(email, userDetails = {}) {
   }
 
   challenges.set(cleanEmail, {
+    otp,
     hash,
     expiresAt,
     attempts: 0,

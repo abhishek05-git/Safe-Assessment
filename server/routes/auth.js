@@ -1,6 +1,6 @@
 import express from 'express'
 import { generateOtpChallenge, verifyOtp } from '../services/otpService.js'
-import { sendOtpEmail } from '../services/googleSheets.js'
+import { sendOtpEmail, requestCandidateAccess } from '../services/googleSheets.js'
 import { isSmtpConfigured, sendOtpEmailDirect } from '../services/emailService.js'
 import { createSessionToken, getCookieOptions, verifySessionToken, revokeSession } from '../services/sessionService.js'
 import { otpRequestRateLimiter, otpVerifyRateLimiter } from '../middleware/rateLimiter.js'
@@ -11,8 +11,9 @@ const router = express.Router()
 /**
  * POST /api/auth/request-otp
  * Generates OTP and sends via SMTP or Apps Script email.
- * OTP is never returned to the caller (SEC 01).
+ * OTP is never returned to the caller in production (SEC 01).
  * Validates inputs server-side (Item 8).
+ * Immediately writes registration details to Google Sheets Access_Requests.
  */
 router.post('/request-otp', otpRequestRateLimiter, async (req, res) => {
   try {
@@ -37,6 +38,19 @@ router.post('/request-otp', otpRequestRateLimiter, async (req, res) => {
       validation.sanitized
     )
 
+    // Immediately record candidate details in Google Sheets Access_Requests so registration is captured without waiting for OTP
+    try {
+      await requestCandidateAccess({
+        email: cleanEmail,
+        name: cleanName,
+        org: validation.sanitized['Organization'] || '',
+        phone: validation.sanitized['Phone Number'] || '',
+      })
+      console.log(`[GoogleSheets Success] Registered access request for: ${cleanEmail}`)
+    } catch (sheetErr) {
+      console.warn('[GoogleSheets Warning] Immediate registration record skipped:', sheetErr.message)
+    }
+
     // Issue signed HttpOnly challenge cookie so serverless environments (like Vercel) maintain state
     const challengeToken = createSessionToken(
       {
@@ -49,6 +63,8 @@ router.post('/request-otp', otpRequestRateLimiter, async (req, res) => {
       10 * 60 * 1000
     )
 
+    // Clear any previous participant session so new registration must be freshly approved
+    res.clearCookie('safe_user_session', { path: '/' })
     res.cookie('safe_otp_challenge', challengeToken, getCookieOptions(10 * 60 * 1000))
 
     // 1. If direct SMTP is configured (Hostinger / Gmail / Custom SMTP), dispatch directly
@@ -81,9 +97,11 @@ router.post('/request-otp', otpRequestRateLimiter, async (req, res) => {
       return res.status(502).json({ error: 'Failed to dispatch verification email. Please check mail service configuration.' })
     }
 
-    // In local dev without configured mail transport, log notification for testing
-    if (!dispatched) {
-      console.log(`[DEV OTP NOTIFICATION] Code for ${cleanEmail}: ${otp}`)
+    // Keep server-side terminal log for developer troubleshooting
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`\n==============================================`)
+      console.log(`📧 [EMAIL DISPATCHED] OTP for ${cleanEmail}: ${otp}`)
+      console.log(`==============================================\n`)
     }
 
     return res.json({
